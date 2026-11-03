@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>TwoHearts - Couple's Play & Sync Hub</title>
+  <meta name="description" content="A real-time multiplayer website game for a woman and a man to play together from separate devices anywhere in the world.">
+  <meta name="theme-color" content="#0f0c20">
+
+  <!-- Google Fonts: Poppins -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- PeerJS for WebRTC Worldwide Cross-Device P2P Networking -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <script>
+    if (typeof Peer === 'undefined') {
+      document.write('<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Three.js for 3D Pepelo Co-op Adventure Game -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+    if (typeof THREE === 'undefined') {
+      document.write('<script src="https://unpkg.com/three@0.128.0/build/three.min.js"><\/script>');
+    }
+  </script>
+
+  <!-- Application Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Background Ambiance & Confetti Canvas -->
+  <canvas id="ambient-canvas"></canvas>
+  <canvas id="confetti-canvas"></canvas>
+
+  <div class="app-container">
+
+    <!-- Top Header -->
+    <header class="app-header">
+      <div class="brand-group">
+        <span class="brand-icon">💖</span>
+        <div>
+          <div class="brand-title">TwoHearts</div>
+          <div style="font-size: 0.68rem; color: var(--text-muted); font-weight: 500;">Duo Play & Sync</div>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="auth-btn" class="account-btn" onclick="window.auth.openAuthModal()" title="Couple Account & Saved Progress">
+          <span>👤</span>
+          <span>Login / Save</span>
+        </button>
+        <div id="status-pill" class="status-pill">
+          <span class="status-dot"></span>
+          <span id="status-text">OFFLINE</span>
+        </div>
+        <button id="sound-toggle-btn" class="icon-btn" title="Toggle Sound">🔔</button>
+      </div>
+    </header>
+
+    <!-- ==========================================
+         SCREEN 1: LOBBY (Profile, Create & Join)
+         ========================================== -->
+    <main id="screen-lobby" class="game-screen active">
+      <div class="glass-card">
+        <!-- Continue Game Banner (Appears when logged in or progress > 1) -->
+        <div id="continue-game-banner" class="continue-game-card" style="display: none;">
+          <div class="continue-card-content">
+            <div class="continue-card-badge">✨ ADVENTURE IN PROGRESS</div>
+            <div id="continue-stage-title" class="continue-stage-title">Resume Stage 1: Twin Bridges</div>
+            <div id="continue-account-info" class="continue-account-info">Highest Stage: 1 / 20</div>
+          </div>
+          <button class="btn btn-gold continue-play-btn" onclick="window.auth.continueGame()">
+            ▶️ CONTINUE
+          </button>
+        </div>
+
+        <div style="text-align: center; margin-bottom: 20px;">
+          <h1 style="font-size: 1.4rem; font-weight: 800; margin-bottom: 4px;">Connect With Your Partner</h1>
+          <p style="font-size: 0.85rem; color: var(--text-muted);">Play together in real-time from two separate phones or computers anywhere in the world!</p>
+        </div>
+
+        <!-- Name Input -->
+        <div class="input-group">
+          <label class="input-label" for="player-name-input">YOUR NAME / NICKNAME</label>
+          <input type="text" id="player-name-input" class="text-input" placeholder="e.g. Juliet, Romeo, Honey..." maxlength="18">
+        </div>
+
+        <!-- Role Selector: Juliet vs Romeo -->
+        <label class="input-label">SELECT YOUR AVATAR</label>
+        <div class="role-selector">
+          <div id="role-card-female" class="role-card selected-female" onclick="window.app.selectRole('female')">
+            <span class="role-avatar">👸</span>
+            <span class="role-title" style="color: var(--primary-pink);">Juliet (Queen)</span>
+            <span class="role-sub">Pink Heart 💖</span>
+          </div>
+          <div id="role-card-male" class="role-card" onclick="window.app.selectRole('male')">
+            <span class="role-avatar">🤴</span>
+            <span class="role-title" style="color: var(--primary-blue);">Romeo (King)</span>
+            <span class="role-sub">Blue Heart 💙</span>
+          </div>
+        </div>
+
+        <!-- Navigation Tabs: Create Room vs Join Room -->
+        <div class="tab-nav">
+          <button id="tab-btn-create" class="tab-btn active" onclick="window.app.switchLobbyTab('create')">Create Room</button>
+          <button id="tab-btn-join" class="tab-btn" onclick="window.app.switchLobbyTab('join')">Join Room</button>
+        </div>
+
+        <!-- Tab 1: Create Room Pane -->
+        <div id="tab-pane-create">
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 14px; text-align: center;">
+            Create a private room and invite your partner via link, code, or QR!
+          </p>
+          <button class="btn btn-primary btn-block btn-lg" onclick="window.app.handleCreateRoom()">
+            ✨ Create Private Room
+          </button>
+        </div>
+
+        <!-- Tab 2: Join Room Pane -->
+        <div id="tab-pane-join" style="display: none;">
+          <div class="input-group">
+            <label class="input-label" for="join-code-input">ENTER ROOM CODE</label>
+            <input type="text" id="join-code-input" class="text-input" placeholder="e.g. LOVE24" style="text-transform: uppercase; letter-spacing: 2px; font-weight: 700;">
+          </div>
+          <button class="btn btn-blue btn-block btn-lg" onclick="window.app.handleJoinRoom()">
+            🚀 Connect to Partner
+          </button>
+        </div>
+
+        <!-- Single Device / Pass & Play Option -->
+        <div style="margin-top: 24px; text-align: center; border-top: 1px solid var(--border-glass); padding-top: 14px;">
+          <button class="btn btn-secondary" onclick="window.app.handleSingleDeviceMode()" style="font-size: 0.8rem; padding: 8px 14px;">
+            📱 Playing on Same Phone? (Pass & Play Mode)
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN 2: GAME HUB (Mini-Games Selection)
+         ========================================== -->
+    <main id="screen-hub" class="game-screen">
+      <!-- Duo Connected Status Card -->
+      <div class="duo-status-card">
+        <div class="partner-box">
+          <div id="hub-my-ring" class="partner-avatar-ring female">
+            <span id="hub-my-avatar">👸</span>
+          </div>
+          <span id="hub-my-name" class="partner-name">You</span>
+          <span class="partner-tag">Ready</span>
+        </div>
+
+        <div class="duo-connector">
+          <span class="duo-heart-pulse">💖</span>
+          <span style="font-size: 0.68rem; color: #06d6a0; font-weight: 700;">SYNCED</span>
+        </div>
+
+        <div class="partner-box">
+          <div id="hub-partner-ring" class="partner-avatar-ring male">
+            <span id="hub-partner-avatar">🤴</span>
+          </div>
+          <span id="hub-partner-name" class="partner-name">Partner</span>
+          <span class="partner-tag">Online</span>
+        </div>
+      </div>
+
+      <div style="text-align: center; margin: 6px 0 12px;">
+        <h2 style="font-size: 1.25rem; font-weight: 800;">Choose a Game to Play</h2>
+        <p style="font-size: 0.8rem; color: var(--text-muted);">Pick any mini-game — both devices sync automatically!</p>
+      </div>
+
+      <!-- Games Grid -->
+      <div class="game-grid">
+        <!-- FEATURED FLAGSHIP: Pepelo 3D Adventure Co-Op -->
+        <div class="game-card hero-game-card" onclick="window.app.openGame('pepelo')">
+          <span class="game-badge" style="background: rgba(255, 209, 102, 0.35); color: var(--accent-gold); font-size: 0.72rem; padding: 4px 10px;">⭐ 3D CO-OP ADVENTURE</span>
+          <span class="game-icon" style="font-size: 3rem; margin: 4px 0;">🏔️👫</span>
+          <div class="game-name" style="font-size: 1.25rem;">Pepelo 3D: Co-Op Adventure</div>
+          <div class="game-desc" style="font-size: 0.82rem; color: #f0f0f0; max-width: 440px;">
+            Step into a real 3D cooperative world! Work together to step on buttons, carry energy cubes, ride elevators, and reach the love portal together!
+          </div>
+          <div style="margin-top: 8px;">
+            <span class="btn btn-gold" style="padding: 8px 20px; font-size: 0.85rem; border-radius: 999px;">
+              Play 3D Adventure Together 🚀
+            </span>
+          </div>
+        </div>
+
+        <!-- Game 1: Telepathy -->
+        <div class="game-card" onclick="window.app.openGame('sync')">
+          <span class="game-badge">POPULAR</span>
+          <span class="game-icon">🔮</span>
+          <div class="game-name">Telepathy Sync</div>
+          <div class="game-desc">Answer simultaneously to see how much your minds match!</div>
+        </div>
+
+        <!-- Game 2: Partner Quiz -->
+        <div class="game-card" onclick="window.app.openGame('quiz')">
+          <span class="game-icon">🕵️</span>
+          <div class="game-name">Know Me Best?</div>
+          <div class="game-desc">One answers honestly, the other guesses! Who knows whom better?</div>
+        </div>
+
+        <!-- Game 3: Truth & Dare Wheel -->
+        <div class="game-card" onclick="window.app.openGame('wheel')">
+          <span class="game-badge">SPICY</span>
+          <span class="game-icon">🎡</span>
+          <div class="game-name">Duo Wheel</div>
+          <div class="game-desc">Sweet truths, flirty dares, pillow talk & wild challenges!</div>
+        </div>
+
+        <!-- Game 4: Heart Rush Duel -->
+        <div class="game-card" onclick="window.app.openGame('duel')">
+          <span class="game-badge">ARCADE</span>
+          <span class="game-icon">⚡</span>
+          <div class="game-name">Heart Rush Duel</div>
+          <div class="game-desc">Fast-tapping Tug of War & lightning-fast reflex showdown!</div>
+        </div>
+
+        <!-- Game 5: Tic-Tac-Toe -->
+        <div class="game-card" onclick="window.app.openGame('ttt')">
+          <span class="game-icon">👑</span>
+          <div class="game-name">King vs Queen XO</div>
+          <div class="game-desc">Classic turn-based strategy battle with royal crowns and roses!</div>
+        </div>
+
+        <!-- Game 6: Canvas & Secret Notes -->
+        <div class="game-card" onclick="window.app.openGame('canvas')">
+          <span class="game-icon">🎨</span>
+          <div class="game-name">Live Canvas & Notes</div>
+          <div class="game-desc">Draw together in real-time or send sealed secret love notes!</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN: PEPELO 3D ADVENTURE CO-OP
+         ========================================== -->
+    <main id="screen-pepelo" class="game-screen">
+      <!-- Top HUD -->
+      <div class="pepelo-hud-top">
+        <button class="back-btn" onclick="window.app.backToHub()">← Leave</button>
+        
+        <!-- Interactive Hint Container (Hidden by default, unhide on eye tap) -->
+        <div class="pepelo-hint-container">
+          <div class="pepelo-hint-header" onclick="window.pepeloGame.toggleHint()">
+            <span class="hint-badge">💡 HINT</span>
+            <span id="pepelo-stage-title" class="stage-title">Stage 1</span>
+            <button id="pepelo-hint-toggle-btn" class="hint-eye-btn" title="Tap to Show/Hide Hint">
+              <span id="pepelo-eye-icon">👁️</span>
+              <span id="pepelo-eye-text" class="eye-text">Show Hint</span>
+            </button>
+          </div>
+          <div id="pepelo-hint-body" class="pepelo-hint-body hidden">
+            <div id="pepelo-hint-text">Loading co-op clues...</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 6px; align-items: center;">
+          <button class="level-select-btn" onclick="window.pepeloGame.openLevelSelect()" title="Select Stage">🗺️ 1-20</button>
+          <button class="icon-btn" onclick="window.soundFx.playBell()" title="Ping Partner">🔔</button>
+        </div>
+      </div>
+
+      <!-- 3D Canvas Viewport -->
+      <div id="pepelo-viewport"></div>
+
+      <!-- Mobile Touch Controls Overlay -->
+      <div class="pepelo-controls-overlay">
+        <!-- Virtual Joystick on Left -->
+        <div id="pepelo-joystick-zone" class="pepelo-joystick-zone">
+          <div id="pepelo-joystick-thumb" class="pepelo-joystick-thumb"></div>
+        </div>
+
+        <!-- Action Buttons on Right -->
+        <div class="pepelo-action-buttons">
+          <button class="pepelo-action-btn pepelo-btn-action" onclick="window.pepeloGame.handleAction()" ontouchstart="window.pepeloGame.handleAction(); event.preventDefault();" title="Grab or Drop Cube (E)">
+            <span style="font-size: 1.4rem;">✋</span>
+            <span>GRAB</span>
+          </button>
+          <button class="pepelo-action-btn pepelo-btn-jump" onclick="window.pepeloGame.handleJump()" ontouchstart="window.pepeloGame.handleJump(); event.preventDefault();" title="Jump (Space)">
+            <span style="font-size: 1.4rem;">🦘</span>
+            <span>JUMP</span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN 3: TELEPATHY GAME
+         ========================================== -->
+    <main id="screen-sync" class="game-screen">
+      <div class="game-header-bar">
+        <button class="back-btn" onclick="window.app.backToHub()">← Back to Games</button>
+        <span style="font-weight: 700; font-size: 0.9rem; color: var(--accent-gold);">🔮 Telepathy Mind-Match</span>
+      </div>
+
+      <div class="sync-prompt-card">
+        <div id="sync-category" class="sync-category">💖 ROMANTIC CHEMISTRY</div>
+        <div id="sync-question" class="sync-question">Loading question...</div>
+      </div>
+
+      <div id="sync-options" class="sync-options-grid"></div>
+
+      <div id="sync-waiting" style="text-align: center; color: var(--accent-gold); font-size: 0.85rem; display: none; margin: 10px 0;">
+        Locked in! Waiting for partner... 🔒
+      </div>
+
+      <div id="sync-result" class="sync-result-box"></div>
+
+      <div style="text-align: center; margin-top: 14px;">
+        <button id="sync-next-btn" class="btn btn-primary" onclick="window.syncGame.nextRound()" style="display: none;">
+          Next Question ➡️
+        </button>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN 4: PARTNER QUIZ GAME
+         ========================================== -->
+    <main id="screen-quiz" class="game-screen">
+      <div class="game-header-bar">
+        <button class="back-btn" onclick="window.app.backToHub()">← Back to Games</button>
+        <div id="quiz-scores" style="font-size: 0.82rem; font-weight: 700;"></div>
+      </div>
+
+      <div class="sync-prompt-card">
+        <div id="quiz-role-indicator" style="font-size: 0.8rem; font-weight: 700; margin-bottom: 6px;"></div>
+        <div id="quiz-question" class="sync-question">Loading question...</div>
+      </div>
+
+      <div id="quiz-options" class="sync-options-grid"></div>
+
+      <div id="quiz-result" class="sync-result-box"></div>
+
+      <div style="text-align: center; margin-top: 14px;">
+        <button id="quiz-next-btn" class="btn btn-primary" onclick="window.quizGame.nextRound()" style="display: none;">
+          Next Round (Swap Turns) 🔄
+        </button>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN 5: WHEEL GAME
+         ========================================== -->
+    <main id="screen-wheel" class="game-screen">
+      <div class="game-header-bar">
+        <button class="back-btn" onclick="window.app.backToHub()">← Back to Games</button>
+        <span style="font-weight: 700; font-size: 0.9rem; color: var(--accent-purple);">🎡 Truth, Dare & Pillow Talk</span>
+      </div>
+
+      <div class="wheel-container">
+        <div class="wheel-pointer">▼</div>
+        <canvas id="wheel-canvas" width="280" height="280"></canvas>
+      </div>
+
+      <div style="text-align: center; margin: 14px 0;">
+        <button class="btn btn-gold btn-lg" onclick="window.wheelGame.startSpin()">
+          🎰 SPIN THE WHEEL!
+        </button>
+      </div>
+
+      <!-- Selected Challenge Modal -->
+      <div id="wheel-modal" class="wheel-card-modal">
+        <div id="wheel-card-title" style="font-weight: 800; font-size: 1.2rem; margin-bottom: 8px;"></div>
+        <div id="wheel-card-prompt" style="font-size: 1rem; line-height: 1.4; margin-bottom: 16px;"></div>
+        <div style="display: flex; gap: 8px; justify-content: center;">
+          <button class="btn btn-primary" onclick="window.wheelGame.completeChallenge()">
+            ✅ Completed! (+5 Hearts)
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN 6: TAP DUEL GAME
+         ========================================== -->
+    <main id="screen-duel" class="game-screen">
+      <div class="game-header-bar">
+        <button class="back-btn" onclick="window.app.backToHub()">← Back to Games</button>
+        <div style="display: flex; gap: 4px;">
+          <button class="btn btn-secondary" onclick="window.duelGame.switchMode('tug')" style="font-size: 0.75rem; padding: 6px 10px;">Tug of Love</button>
+          <button class="btn btn-secondary" onclick="window.duelGame.switchMode('reflex')" style="font-size: 0.75rem; padding: 6px 10px;">Love Reflex</button>
+        </div>
+      </div>
+
+      <!-- Mode A: Tug of Love -->
+      <div id="duel-tug-section" class="duel-arena">
+        <div style="display: flex; justify-content: space-between; width: 100%; font-size: 0.8rem; font-weight: 700;">
+          <span style="color: var(--primary-blue);">🤴 King's Side</span>
+          <span id="duel-timer" style="color: var(--accent-gold); font-size: 1.1rem;">10s</span>
+          <span style="color: var(--primary-pink);">👸 Queen's Side</span>
+        </div>
+
+        <!-- Tug Meter Bar -->
+        <div class="duel-meter-wrap">
+          <div id="duel-meter-male" class="duel-meter-male" style="width: 50%;"></div>
+          <div id="duel-meter-female" class="duel-meter-female" style="width: 50%;"></div>
+          <span id="duel-heart" class="duel-heart-marker" style="left: 50%;">💖</span>
+        </div>
+
+        <div id="duel-winner" style="font-weight: 700; font-size: 1rem; min-height: 24px; text-align: center;"></div>
+
+        <button id="duel-start-btn" class="btn btn-gold btn-lg" onclick="window.duelGame.startTugCountdown()">
+          ⚡ START TUG OF LOVE!
+        </button>
+
+        <button id="duel-tap-btn" class="tap-duel-btn" onclick="window.duelGame.handleLocalTap()" ontouchstart="window.duelGame.handleLocalTap(); event.preventDefault();" style="display: none;">
+          <span>TAP!</span>
+          <span style="font-size: 2.2rem;">⚡</span>
+        </button>
+      </div>
+
+      <!-- Mode B: Reflex Duel -->
+      <div id="duel-reflex-section" style="display: none; text-align: center; padding: 20px 0;">
+        <div id="reflex-box" onclick="window.duelGame.handleReflexTap()" ontouchstart="window.duelGame.handleReflexTap(); event.preventDefault();" style="border: 2px dashed var(--border-glass); border-radius: var(--radius-lg); padding: 40px 20px; cursor: pointer; user-select: none; transition: all 0.15s ease;">
+          <div id="reflex-status" style="font-size: 1.3rem; font-weight: 700;">
+            Tap "Start Reflex Test" below!
+          </div>
+        </div>
+        <div style="margin-top: 18px;">
+          <button class="btn btn-primary" onclick="window.duelGame.startReflexGame()">
+            🎯 Start Reflex Test
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN 7: TIC-TAC-TOE GAME
+         ========================================== -->
+    <main id="screen-ttt" class="game-screen">
+      <div class="game-header-bar">
+        <button class="back-btn" onclick="window.app.backToHub()">← Back to Games</button>
+        <div id="ttt-scores" style="font-size: 0.8rem; font-weight: 700;"></div>
+      </div>
+
+      <div id="ttt-status" style="text-align: center; margin-bottom: 10px; font-size: 0.95rem;"></div>
+
+      <div id="ttt-board" class="ttt-board"></div>
+
+      <div style="text-align: center; margin-top: 14px;">
+        <button class="btn btn-secondary" onclick="window.tttGame.resetBoard(true)">
+          🔄 New Round
+        </button>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         SCREEN 8: LIVE CANVAS & SECRET NOTES
+         ========================================== -->
+    <main id="screen-canvas" class="game-screen">
+      <div class="game-header-bar">
+        <button class="back-btn" onclick="window.app.backToHub()">← Back to Games</button>
+        <span style="font-weight: 700; font-size: 0.9rem; color: var(--primary-pink);">🎨 Collaborative Canvas</span>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="draw-canvas"></canvas>
+      </div>
+
+      <!-- Canvas Toolbar -->
+      <div class="canvas-toolbar">
+        <div class="color-palette">
+          <div class="color-dot active" style="background: #ff4d8d;" onclick="window.canvasGame.setColor('#ff4d8d', this)"></div>
+          <div class="color-dot" style="background: #4d94ff;" onclick="window.canvasGame.setColor('#4d94ff', this)"></div>
+          <div class="color-dot" style="background: #ffd166;" onclick="window.canvasGame.setColor('#ffd166', this)"></div>
+          <div class="color-dot" style="background: #9d4edd;" onclick="window.canvasGame.setColor('#9d4edd', this)"></div>
+          <div class="color-dot" style="background: #06d6a0;" onclick="window.canvasGame.setColor('#06d6a0', this)"></div>
+          <div class="color-dot" style="background: #141026;" onclick="window.canvasGame.setColor('#141026', this)" title="Eraser">🧹</div>
+        </div>
+
+        <button class="btn btn-secondary" onclick="window.canvasGame.clearCanvas(true)" style="padding: 6px 12px; font-size: 0.78rem;">
+          Clear Canvas
+        </button>
+      </div>
+
+      <!-- Secret Note Composer -->
+      <div class="glass-card" style="margin-top: 14px; padding: 14px;">
+        <label class="input-label">💌 SEND A SEALED LOVE NOTE</label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="secret-note-input" class="text-input" placeholder="Whisper something sweet..." maxlength="120">
+          <button class="btn btn-primary" onclick="window.canvasGame.sendSecretNote()">Send</button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ==========================================
+         FLOATING REACTION BAR & LOVE BELL
+         ========================================== -->
+    <footer id="reaction-bar" class="reaction-bar" style="display: none;">
+      <button class="reaction-btn" onclick="window.app.sendReaction('❤️')" title="Love">❤️</button>
+      <button class="reaction-btn" onclick="window.app.sendReaction('💋')" title="Kiss">💋</button>
+      <button class="reaction-btn" onclick="window.app.sendReaction('😂')" title="Laugh">😂</button>
+      <button class="reaction-btn" onclick="window.app.sendReaction('🔥')" title="Fire">🔥</button>
+      <button class="reaction-btn" onclick="window.app.sendReaction('🥺')" title="Hug">🥺</button>
+      <button class="reaction-btn" onclick="window.app.sendReaction('💍')" title="Propose">💍</button>
+      <button class="love-bell-btn" onclick="window.app.sendLoveBell()" title="Ring Partner's Phone">
+        <span>🔔</span> Love Bell
+      </button>
+    </footer>
+
+  </div>
+
+  <!-- Secret Note Modal Popup -->
+  <div id="secret-note-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-box">
+      <div style="font-size: 2.8rem; margin-bottom: 8px;">💌</div>
+      <h3 id="secret-note-sender" style="font-size: 1.1rem; color: var(--accent-gold); margin-bottom: 12px;"></h3>
+      <p id="secret-note-text" style="font-size: 1.15rem; font-style: italic; line-height: 1.5; margin-bottom: 20px;"></p>
+      <button class="btn btn-primary" onclick="window.canvasGame.closeSecretModal()">
+        💖 Melt My Heart (Close)
+      </button>
+    </div>
+  </div>
+
+  <!-- Pepelo Stage Select Modal (Levels 1 to 20) -->
+  <div id="pepelo-select-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-box" style="max-width: 480px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="color: var(--accent-gold); font-size: 1.15rem; font-weight: 800;">🗺️ SELECT STAGE (1 - 20)</h3>
+        <button class="icon-btn" onclick="window.pepeloGame.closeLevelSelect()">✕</button>
+      </div>
+      <div id="pepelo-level-grid" class="pepelo-level-grid"></div>
+    </div>
+  </div>
+
+  <!-- Pepelo Stage Complete Modal -->
+  <div id="pepelo-win-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-box">
+      <div style="font-size: 3.2rem; margin-bottom: 8px;">🏆✨</div>
+      <h2 style="font-size: 1.5rem; color: var(--accent-gold); margin-bottom: 4px;">STAGE COMPLETED!</h2>
+      <div id="pepelo-win-stage-num" style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Stage Cleared!</div>
+      <p style="font-size: 0.95rem; color: #fff; margin-bottom: 20px; line-height: 1.4;">
+        You two worked together like true soulmates! Ready for the next co-op puzzle adventure?
+      </p>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" style="flex: 1;" onclick="window.pepeloGame.openLevelSelect()">
+          🗺️ Select Stage
+        </button>
+        <button class="btn btn-gold" style="flex: 1;" onclick="window.pepeloGame.nextLevel()">
+          Next Stage ➡️
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pepelo Grand Finale Modal (All 20 Stages Conquered!) -->
+  <div id="pepelo-finale-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-box" style="border: 2px solid var(--accent-gold); box-shadow: 0 0 40px rgba(255, 209, 102, 0.6);">
+      <div style="font-size: 3.8rem; margin-bottom: 8px;">👑💖🎉</div>
+      <h2 style="font-size: 1.6rem; color: var(--accent-gold); margin-bottom: 6px;">ALL 20 STAGES CONQUERED!</h2>
+      <div style="font-size: 0.9rem; color: #ff85b3; font-weight: 700; margin-bottom: 12px;">ULTIMATE CO-OP SOULMATES! 🌟</div>
+      <p style="font-size: 0.95rem; color: #f0f0f0; margin-bottom: 24px; line-height: 1.5;">
+        You and your partner completed every single challenge from Stage 1 to Stage 20! Your communication, timing, and teamwork are truly unmatched!
+      </p>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" style="flex: 1;" onclick="window.pepeloGame.openLevelSelect()">
+          🗺️ Replay Any Stage
+        </button>
+        <button class="btn btn-primary" style="flex: 1;" onclick="window.pepeloGame.jumpToLevel(1)">
+          🔄 Play from Stage 1
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Couple Save & Login Modal (Romeo & Juliet Authentication) -->
+  <div id="auth-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-box auth-modal-box">
+      <div class="auth-modal-header">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 1.5rem;">🔐</span>
+          <h3 style="color: var(--accent-gold); font-size: 1.15rem; font-weight: 800;">ROMEO & JULIET SYNC</h3>
+        </div>
+        <button class="icon-btn" onclick="window.auth.closeAuthModal()">✕</button>
+      </div>
+
+      <!-- View A: Guest / Login / Register -->
+      <div id="auth-view-guest">
+        <div class="tab-nav" style="margin-bottom: 14px;">
+          <button id="auth-tab-login" class="tab-btn active" onclick="window.auth.switchAuthTab('login')">Log In</button>
+          <button id="auth-tab-register" class="tab-btn" onclick="window.auth.switchAuthTab('register')">Create Account</button>
+        </div>
+
+        <!-- Tab 1: Log In -->
+        <div id="auth-pane-login">
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; text-align: center;">
+            Enter your Couple Account & PIN, then choose whether you are logging in as <b>Romeo</b> or <b>Juliet</b>!
+          </p>
+
+          <div class="input-group">
+            <label class="input-label" for="login-account-input">COUPLE ACCOUNT / TEAM NAME</label>
+            <input type="text" id="login-account-input" class="text-input" placeholder="e.g. LoveBirds2026" maxlength="24">
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="login-pin-input">4-DIGIT SECRET PIN</label>
+            <input type="password" id="login-pin-input" class="text-input" placeholder="••••" maxlength="8" style="letter-spacing: 4px; font-weight: 700;">
+          </div>
+
+          <!-- Romeo or Juliet Selector for Login -->
+          <label class="input-label" style="text-align: center; display: block; margin-top: 8px;">WHO ARE YOU LOGGING IN AS?</label>
+          <div class="identity-selector">
+            <div id="login-id-juliet" class="identity-card selected-juliet" onclick="window.auth.selectLoginIdentity('juliet')">
+              <span class="identity-avatar">👸</span>
+              <span class="identity-title" style="color: var(--primary-pink);">Juliet</span>
+              <span class="identity-sub">Queen / Pink 💖</span>
+            </div>
+            <div id="login-id-romeo" class="identity-card" onclick="window.auth.selectLoginIdentity('romeo')">
+              <span class="identity-avatar">🤴</span>
+              <span class="identity-title" style="color: var(--primary-blue);">Romeo</span>
+              <span class="identity-sub">King / Blue 💙</span>
+            </div>
+          </div>
+
+          <button id="login-submit-btn" class="btn btn-primary btn-block btn-lg" onclick="window.auth.handleLoginSubmit()">
+            🚀 Log In as Juliet & Resume Game
+          </button>
+        </div>
+
+        <!-- Tab 2: Create Account -->
+        <div id="auth-pane-register" style="display: none;">
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; text-align: center;">
+            Create a shared Couple Account so Romeo and Juliet can both sync and continue the 20-level co-op adventure!
+          </p>
+
+          <div class="input-group">
+            <label class="input-label" for="reg-account-input">CHOOSE COUPLE ACCOUNT NAME</label>
+            <input type="text" id="reg-account-input" class="text-input" placeholder="e.g. RomeoAndJuliet" maxlength="24">
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="reg-pin-input">SET SECRET 4-DIGIT PIN</label>
+            <input type="password" id="reg-pin-input" class="text-input" placeholder="••••" maxlength="8" style="letter-spacing: 4px; font-weight: 700;">
+          </div>
+
+          <!-- Romeo or Juliet Selector for Register -->
+          <label class="input-label" style="text-align: center; display: block; margin-top: 8px;">WHICH ONE ARE YOU?</label>
+          <div class="identity-selector">
+            <div id="reg-id-juliet" class="identity-card selected-juliet" onclick="window.auth.selectRegIdentity('juliet')">
+              <span class="identity-avatar">👸</span>
+              <span class="identity-title" style="color: var(--primary-pink);">I am Juliet</span>
+              <span class="identity-sub">Queen / Pink 💖</span>
+            </div>
+            <div id="reg-id-romeo" class="identity-card" onclick="window.auth.selectRegIdentity('romeo')">
+              <span class="identity-avatar">🤴</span>
+              <span class="identity-title" style="color: var(--primary-blue);">I am Romeo</span>
+              <span class="identity-sub">King / Blue 💙</span>
+            </div>
+          </div>
+
+          <div class="input-group">
+            <label class="input-label" for="reg-name-input">YOUR NICKNAME (OPTIONAL)</label>
+            <input type="text" id="reg-name-input" class="text-input" placeholder="Juliet" value="Juliet" maxlength="18">
+          </div>
+
+          <button id="reg-submit-btn" class="btn btn-primary btn-block btn-lg" onclick="window.auth.handleRegisterSubmit()">
+            ✨ Create Account as Juliet
+          </button>
+        </div>
+      </div>
+
+      <!-- View B: Profile View (Logged in) -->
+      <div id="auth-view-profile" style="display: none;">
+        <div class="auth-profile-card">
+          <div id="auth-profile-avatar" style="font-size: 3.5rem; margin-bottom: 6px;">👸</div>
+          <div id="auth-profile-name" style="font-size: 1.35rem; font-weight: 800; color: #fff;">Juliet</div>
+          <div id="auth-profile-role-tag" class="auth-role-tag" style="color: var(--primary-pink); font-weight: 700; font-size: 0.85rem; margin-bottom: 4px;">
+            👸 Juliet (Queen / Pink) • Partner: Romeo 🤴
+          </div>
+          <div id="auth-profile-couple" style="font-size: 0.82rem; color: var(--accent-gold); font-weight: 600;">Couple: RomeoAndJuliet</div>
+
+          <div class="auth-stats-box">
+            <div class="auth-stat-item">
+              <span class="auth-stat-label">HIGHEST STAGE</span>
+              <span id="auth-stat-stage" class="auth-stat-value">1 / 20</span>
+            </div>
+            <div class="auth-stat-item">
+              <span class="auth-stat-label">COUPLE SYNC</span>
+              <span class="auth-stat-value" style="color: #06d6a0;">SAVED 💾</span>
+            </div>
+          </div>
+
+          <!-- Switch Persona Button (Romeo <-> Juliet) -->
+          <div style="margin: 10px 0;">
+            <button id="auth-switch-role-btn" class="btn btn-secondary btn-block" onclick="window.auth.switchCurrentIdentity()" style="font-size: 0.8rem; padding: 8px;">
+              🔄 Switch to Romeo (🤴 He / Blue)
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 8px; width: 100%; margin-top: 10px;">
+            <button class="btn btn-gold" style="flex: 2;" onclick="window.auth.continueGame()">
+              ▶️ Continue Adventure
+            </button>
+            <button class="btn btn-secondary" style="flex: 1;" onclick="window.auth.logout()">
+              🚪 Log Out
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Application Scripts -->
+  <script src="js/audio.js"></script>
+  <script src="js/network.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/pepelo_game.js"></script>
+  <script src="js/games/sync.js"></script>
+  <script src="js/games/quiz.js"></script>
+  <script src="js/games/wheel.js"></script>
+  <script src="js/games/duel.js"></script>
+  <script src="js/games/tictactoe.js"></script>
+  <script src="js/games/canvas.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
