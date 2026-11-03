@@ -7223,9 +7223,7 @@ class AppController {
 }
 
 window.app = new AppController();
-window.addEventListener('DOMContentLoaded', () => {
-  window.app.init();
-});
+if (document.readyState === 'loading') { window.addEventListener('DOMContentLoaded', () => { window.app.init(); }); } else { window.app.init(); }
 
 
 </script>
