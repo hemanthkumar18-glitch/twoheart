@@ -1958,6 +1958,9 @@ input, select, textarea, .text-input {
           <div class="game-desc" style="font-size: 0.82rem; color: #f0f0f0; max-width: 440px;">
             Step into a real 3D cooperative world! Work together to step on buttons, carry energy cubes, ride elevators, and reach the love portal together!
           </div>
+          <div id="hub-pepelo-resume-badge" style="margin-top: 6px; font-size: 0.82rem; font-weight: 700; color: #ffd166;">
+            &#x25B6;&#xFE0F; Resume Stage 1: Twin Bridges
+          </div>
           <div style="margin-top: 8px;">
             <span class="btn btn-gold" style="padding: 8px 20px; font-size: 0.85rem; border-radius: 999px;">
               Play 3D Adventure Together &#x1F680;
@@ -2633,7 +2636,7 @@ class SoundEffects {
     this.vibrate([80]);
   }
 
-  // Silver Love Bell 🔔
+  // Silver Love Bell (Notification)
   playBell() {
     if (this.muted) return;
     this.init();
@@ -2742,8 +2745,8 @@ class NetworkManager {
     this.playerId = 'p_' + Math.random().toString(36).substring(2, 9);
     this.player = {
       name: 'Player',
-      role: 'female', // 'female' (Queen 👸) or 'male' (King 🤴)
-      avatar: '👸'
+      role: 'female', // 'female' (Queen) or 'male' (King)
+      avatar: '\u{1F478}'
     };
     this.partner = null;
     this.connected = false;
@@ -3010,20 +3013,20 @@ class NetworkManager {
       this.partner = payload.player;
 
       // Sync highest unlocked stage between partners across devices
-      if (payload.unlockedLevel && window.auth && typeof window.auth.saveProgress === 'function') {
-        const partnerLvl = parseInt(payload.unlockedLevel, 10);
-        if (partnerLvl > window.auth.getUnlockedLevel()) {
-          window.auth.saveProgress(partnerLvl);
-        }
+      const partnerLvl = parseInt(payload.unlockedLevel || payload.lastStage || '1', 10);
+      const myLvl = (window.auth && typeof window.auth.getUnlockedLevel === 'function')
+        ? window.auth.getUnlockedLevel()
+        : 1;
+      const bestLvl = Math.max(partnerLvl, myLvl);
+      if (window.auth && typeof window.auth.saveProgress === 'function') {
+        window.auth.saveProgress(bestLvl);
       }
 
       if (this.isHost) {
-        const currentLevel = (window.auth && typeof window.auth.getUnlockedLevel === 'function') 
-          ? window.auth.getUnlockedLevel() 
-          : 1;
         this.send('HANDSHAKE_ACK', { 
           player: this.player,
-          unlockedLevel: currentLevel
+          unlockedLevel: bestLvl,
+          lastStage: bestLvl
         });
       }
       this.emit('partner_connected', { partner: this.partner });
@@ -3031,11 +3034,13 @@ class NetworkManager {
       this.partner = payload.player;
 
       // Sync highest unlocked stage between partners across devices
-      if (payload.unlockedLevel && window.auth && typeof window.auth.saveProgress === 'function') {
-        const partnerLvl = parseInt(payload.unlockedLevel, 10);
-        if (partnerLvl > window.auth.getUnlockedLevel()) {
-          window.auth.saveProgress(partnerLvl);
-        }
+      const partnerLvl = parseInt(payload.unlockedLevel || payload.lastStage || '1', 10);
+      const myLvl = (window.auth && typeof window.auth.getUnlockedLevel === 'function')
+        ? window.auth.getUnlockedLevel()
+        : 1;
+      const bestLvl = Math.max(partnerLvl, myLvl);
+      if (window.auth && typeof window.auth.saveProgress === 'function') {
+        window.auth.saveProgress(bestLvl);
       }
 
       this.emit('partner_connected', { partner: this.partner });
@@ -3084,7 +3089,7 @@ class NetworkManager {
     this.partner = {
       name: playerProfile.role === 'female' ? 'Him' : 'Her',
       role: playerProfile.role === 'female' ? 'male' : 'female',
-      avatar: playerProfile.role === 'female' ? '🤴' : '👸'
+      avatar: playerProfile.role === 'female' ? '\u{1F934}' : '\u{1F478}'
     };
     this.emit('partner_connected', { partner: this.partner, isSingleDevice: true });
   }
@@ -3122,7 +3127,7 @@ window.network = new NetworkManager();
 
 // --- js\auth.js ---
 // TwoHearts - Romeo & Juliet Couple Authentication & Progress Persistence
-// Allows couples to register/login by choosing Romeo (🤴) or Juliet (👸)
+// Allows couples to register/login by choosing Romeo or Juliet
 // Synchronizes 20-level co-op progress across separate devices and browser sessions
 
 class AuthManager {
@@ -3202,14 +3207,14 @@ class AuthManager {
       julietCard?.classList.add('selected-juliet');
       romeoCard?.classList.remove('selected-romeo');
       if (submitBtn) {
-        submitBtn.innerHTML = `🚀 Log In as Juliet & Resume Game`;
+        submitBtn.innerHTML = `\u{1F680} Log In as Juliet &amp; Resume Game`;
         submitBtn.className = 'btn btn-primary btn-block btn-lg';
       }
     } else {
       romeoCard?.classList.add('selected-romeo');
       julietCard?.classList.remove('selected-juliet');
       if (submitBtn) {
-        submitBtn.innerHTML = `🚀 Log In as Romeo & Resume Game`;
+        submitBtn.innerHTML = `\u{1F680} Log In as Romeo &amp; Resume Game`;
         submitBtn.className = 'btn btn-blue btn-block btn-lg';
       }
     }
@@ -3232,7 +3237,7 @@ class AuthManager {
         nameInput.value = 'Juliet';
       }
       if (submitBtn) {
-        submitBtn.innerHTML = `✨ Create Account as Juliet`;
+        submitBtn.innerHTML = `\u{2728} Create Account as Juliet`;
         submitBtn.className = 'btn btn-primary btn-block btn-lg';
       }
     } else {
@@ -3242,7 +3247,7 @@ class AuthManager {
         nameInput.value = 'Romeo';
       }
       if (submitBtn) {
-        submitBtn.innerHTML = `✨ Create Account as Romeo`;
+        submitBtn.innerHTML = `\u{2728} Create Account as Romeo`;
         submitBtn.className = 'btn btn-blue btn-block btn-lg';
       }
     }
@@ -3266,7 +3271,7 @@ class AuthManager {
 
     if (window.soundFx) window.soundFx.playFanfare();
     if (window.app && window.app.showToast) {
-      const emoji = isJuliet ? '👸' : '🤴';
+      const emoji = isJuliet ? '\u{1F478}' : '\u{1F934}';
       window.app.showToast(`Switched identity to ${this.session.nickname} ${emoji}!`);
     }
   }
@@ -3296,7 +3301,7 @@ class AuthManager {
             this.saveLocalSession();
             this.updateUI();
             if (window.app && window.app.showToast) {
-              window.app.showToast(`🔄 Synced with partner! Highest Stage: ${data.unlockedLevel}`);
+              window.app.showToast(`\u{1F496} Synced with partner! Highest Stage: ${data.unlockedLevel}`);
             }
           }
         }
@@ -3364,9 +3369,9 @@ class AuthManager {
     this.updateUI();
 
     this.closeAuthModal();
-    const avatar = (identity === 'juliet') ? '👸' : '🤴';
+    const avatar = (identity === 'juliet') ? '\u{1F478}' : '\u{1F934}';
     if (window.app && window.app.showToast) {
-      window.app.showToast(`✨ Welcome ${nickname} ${avatar}! Couple account created.`);
+      window.app.showToast(`\u{2728} Welcome ${nickname} ${avatar}! Couple account created.`);
     }
     if (window.soundFx) window.soundFx.playFanfare();
     return true;
@@ -3434,9 +3439,9 @@ class AuthManager {
     this.updateUI();
 
     this.closeAuthModal();
-    const avatar = (identity === 'juliet') ? '👸' : '🤴';
+    const avatar = (identity === 'juliet') ? '\u{1F478}' : '\u{1F934}';
     if (window.app && window.app.showToast) {
-      window.app.showToast(`👋 Welcome back ${nickname} ${avatar}! Stage ${this.session.unlockedLevel} ready.`);
+      window.app.showToast(`\u{1F496} Welcome back ${nickname} ${avatar}! Stage ${this.session.unlockedLevel} ready.`);
     }
     if (window.soundFx) window.soundFx.playFanfare();
     return true;
@@ -3453,7 +3458,7 @@ class AuthManager {
       this.updateUI();
 
       if (window.app && window.app.showToast) {
-        window.app.showToast(`💾 Progress Saved: Stage ${this.session.unlockedLevel} Unlocked! 🌟`);
+        window.app.showToast(`\u{1F4BE} Progress Saved: Stage ${this.session.unlockedLevel} Unlocked! \u{1F389}`);
       }
 
       // Sync to backend if logged in
@@ -3476,7 +3481,14 @@ class AuthManager {
   }
 
   getUnlockedLevel() {
-    return this.session.unlockedLevel || 1;
+    const authLevel = (this.session && this.session.unlockedLevel) ? Number(this.session.unlockedLevel) : 1;
+    const localLast = parseInt(localStorage.getItem('twohearts_last_stage') || '1', 10);
+    const localMax = parseInt(localStorage.getItem('twohearts_unlocked_level') || '1', 10);
+    const best = Math.max(1, Math.min(20, Math.max(authLevel, localLast, localMax)));
+    if (this.session) {
+      this.session.unlockedLevel = best;
+    }
+    return best;
   }
 
   // Continue the game from highest unlocked stage
@@ -3491,7 +3503,7 @@ class AuthManager {
       window.app.openGame('pepelo');
       window.pepeloGame.jumpToLevel(stageToResume);
       if (window.app && window.app.showToast) {
-        window.app.showToast(`▶️ Resuming Stage ${stageToResume}: ${this.levelNames[stageToResume - 1] || 'Level ' + stageToResume}`);
+        window.app.showToast(`\u{25B6}\u{FE0F} Resuming Stage ${stageToResume}: ${this.levelNames[stageToResume - 1] || "Level " + stageToResume}`);
       }
     } else {
       window.app.openGame('pepelo');
@@ -3525,8 +3537,8 @@ class AuthManager {
   // Update DOM elements representing auth state
   updateUI() {
     const isJuliet = (this.session.identity === 'juliet');
-    const avatar = isJuliet ? '👸' : '🤴';
-    const partnerAvatar = isJuliet ? '🤴' : '👸';
+    const avatar = isJuliet ? '\u{1F478}' : '\u{1F934}';
+    const partnerAvatar = isJuliet ? '\u{1F934}' : '\u{1F478}';
     const partnerName = isJuliet ? 'Romeo' : 'Juliet';
 
     // 1. Header Auth Button
@@ -3536,7 +3548,7 @@ class AuthManager {
         authBtn.innerHTML = `<span class="auth-btn-avatar">${avatar}</span> <span class="auth-btn-label">${this.session.nickname} (Lvl ${this.session.unlockedLevel})</span>`;
         authBtn.className = `account-btn logged-in ${isJuliet ? 'juliet' : 'romeo'}`;
       } else {
-        authBtn.innerHTML = `<span>👤</span> <span>Login / Save</span>`;
+        authBtn.innerHTML = `<span>\u{1F464}</span> <span>Login / Save</span>`;
         authBtn.className = 'account-btn';
       }
     }
@@ -3568,7 +3580,7 @@ class AuthManager {
         }
         if (accountInfo) {
           if (this.session.isLoggedIn) {
-            accountInfo.textContent = `Playing as ${this.session.nickname} ${avatar} (Partner: ${partnerName} ${partnerAvatar}) • Stage ${highest}/20`;
+            accountInfo.textContent = `Playing as ${this.session.nickname} ${avatar} (Partner: ${partnerName} ${partnerAvatar}) - Stage ${highest}/20`;
           } else {
             accountInfo.textContent = `Highest Stage: ${highest} / 20`;
           }
@@ -3596,13 +3608,13 @@ class AuthManager {
         if (pAvatar) pAvatar.textContent = avatar;
         if (pName) pName.textContent = this.session.nickname;
         if (pRoleTag) {
-          pRoleTag.textContent = `${avatar} ${this.session.nickname} • Partner: ${partnerName} ${partnerAvatar}`;
+          pRoleTag.textContent = `${avatar} ${this.session.nickname} - Partner: ${partnerName} ${partnerAvatar}`;
           pRoleTag.style.color = isJuliet ? 'var(--primary-pink)' : 'var(--primary-blue)';
         }
         if (pCouple) pCouple.textContent = `Couple Account: ${this.session.account}`;
         if (pStage) pStage.textContent = `${this.session.unlockedLevel} / 20`;
         if (pSwitchBtn) {
-          pSwitchBtn.textContent = `🔄 Switch to ${partnerName} (${partnerAvatar})`;
+          pSwitchBtn.textContent = `\u{1F504} Switch to ${partnerName} (${partnerAvatar})`;
         }
       } else {
         guestView.style.display = 'block';
@@ -3784,9 +3796,10 @@ class PepeloCoopGame {
     this.buildCharacters();
 
     // 6. Build Initial Level (Auto-resumes highest unlocked stage)
-    if (window.auth && typeof window.auth.getUnlockedLevel === 'function') {
-      this.currentLevelIndex = window.auth.getUnlockedLevel();
-    }
+    const savedLevel = (window.auth && typeof window.auth.getUnlockedLevel === 'function')
+      ? window.auth.getUnlockedLevel()
+      : Math.max(1, parseInt(localStorage.getItem('twohearts_last_stage') || '1', 10));
+    this.currentLevelIndex = Math.max(1, Math.min(20, Math.max(this.currentLevelIndex || 1, savedLevel)));
     this.loadLevel(this.currentLevelIndex);
 
     // 7. Setup Inputs & Touch Controls
@@ -3954,7 +3967,7 @@ class PepeloCoopGame {
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(`${isFemale ? 'ðŸ‘¸' : 'ðŸ¤´'} ${displayName}`, 128, 32);
+    ctx.fillText(`${isFemale ? "\u{1F478}" : "\u{1F934}"} ${displayName}`, 128, 32);
 
     const texture = new THREE.CanvasTexture(canvas);
     const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
@@ -5008,7 +5021,7 @@ class PepeloCoopGame {
     }
 
     if (window.app && typeof window.app.showToast === 'function') {
-      window.app.showToast('âš¡ Zapped! Careful with laser timing!');
+      window.app.showToast('\u{26A0}\u{FE0F} Zapped! Careful with laser timing!');;
     }
 
     const cp = this.checkpointPos || { x: 0, y: 1.5, z: 8 };
@@ -5027,6 +5040,9 @@ class PepeloCoopGame {
       if (!this.isActive) return;
 
       if (type === 'PEP_POS' && this.remotePlayer) {
+        if (payload.level && payload.level !== this.currentLevelIndex && !this.isLevelWon) {
+          this.jumpToLevel(payload.level, false);
+        }
         this.remotePlayer.targetPos = new THREE.Vector3(payload.x, payload.y, payload.z);
         this.remotePlayer.targetRotY = payload.rotY;
         this.remotePlayer.isCarrying = payload.isCarrying;
@@ -5063,7 +5079,8 @@ class PepeloCoopGame {
       z: p.position.z,
       rotY: p.rotation.y,
       isCarrying: (this.carriedObject !== null),
-      walkCycle: this.localPlayer.walkCycle
+      walkCycle: this.localPlayer.walkCycle,
+      level: this.currentLevelIndex
     });
   }
 
@@ -5430,9 +5447,10 @@ class PepeloCoopGame {
     window.soundFx.playFanfare();
     window.app.triggerConfetti(100);
 
-    // Save unlocked progress to couple account & storage
+    const nextStage = Math.min(this.totalLevels, this.currentLevelIndex + 1);
+    localStorage.setItem('twohearts_last_stage', nextStage.toString());
     if (window.auth && typeof window.auth.saveProgress === 'function') {
-      window.auth.saveProgress(this.currentLevelIndex + 1);
+      window.auth.saveProgress(nextStage);
     }
 
     if (this.currentLevelIndex >= this.totalLevels) {
@@ -5461,12 +5479,18 @@ class PepeloCoopGame {
     window.network.send('PEP_LEVEL_NEXT', { level: this.currentLevelIndex });
   }
 
-  jumpToLevel(level) {
-    window.soundFx.playPop();
+  jumpToLevel(level, broadcast = true) {
+    if (window.soundFx) window.soundFx.playPop();
     this.closeLevelSelect();
-    this.currentLevelIndex = level;
+    this.currentLevelIndex = Math.max(1, Math.min(this.totalLevels, Number(level) || 1));
+    localStorage.setItem('twohearts_last_stage', this.currentLevelIndex.toString());
+    if (window.auth && typeof window.auth.saveProgress === 'function') {
+      window.auth.saveProgress(this.currentLevelIndex);
+    }
     this.loadLevel(this.currentLevelIndex);
-    window.network.send('PEP_LEVEL_NEXT', { level: this.currentLevelIndex });
+    if (broadcast) {
+      window.network.send('PEP_LEVEL_NEXT', { level: this.currentLevelIndex });
+    }
   }
 
   openLevelSelect() {
@@ -5550,10 +5574,10 @@ class PepeloCoopGame {
 
     if (eyeIcon && eyeText) {
       if (this.isHintVisible) {
-        eyeIcon.textContent = 'ðŸ™ˆ';
+        eyeIcon.innerHTML = '&#x1F648;';
         eyeText.textContent = 'Hide Hint';
       } else {
-        eyeIcon.textContent = 'ðŸ‘ï¸';
+        eyeIcon.innerHTML = '&#x1F441;&#xFE0F;';
         eyeText.textContent = 'Show Hint';
       }
     }
@@ -5568,131 +5592,131 @@ class PepeloCoopGame {
 
     this.isHintVisible = false;
     if (body) body.classList.add('hidden');
-    if (eyeIcon) eyeIcon.textContent = 'ðŸ‘ï¸';
+    if (eyeIcon) eyeIcon.innerHTML = '&#x1F441;&#xFE0F;';
     if (eyeText) eyeText.textContent = 'Show Hint';
 
     const hints = [
-      // 1
+      // 1: Twin Bridges
       `Stage 1: Twin Bridges`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on the <b>Pink Button</b> to lower Bridge 1.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Cross over and press <b>GRAB (E)</b> to lift the <b>Golden Cube</b>.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Place cube on the <b>Green Button</b> to open the gate.</span></div>
-       <div class="hint-step"><span class="hint-num">4</span> <span><b>ðŸ‘« Both:</b> Enter the <b>Golden Exit Portal</b>!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F478; Juliet (Queen):</b> Step on the <b>Pink Button</b> to lower Bridge 1.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Cross over and press <b>GRAB (E)</b> to lift the <b>Golden Cube</b>.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> Place the cube on the <b>Green Button</b> to open the gate.</span></div>
+       <div class="hint-step"><span class="hint-num">4</span> <span><b>&#x1F46B; Both:</b> Enter the <b>Golden Exit Portal</b> together!</span></div>`,
 
-      // 2
+      // 2: Ancient Elevator
       `Stage 2: The Elevator`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Stand on the wooden <b>Elevator Platform</b>.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Step on the <b>Blue Button</b> downstairs to hoist Queen up!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘¸ Queen:</b> Step on the <b>Pink Button</b> upstairs to drop the ramp for King.</span></div>
-       <div class="hint-step"><span class="hint-num">4</span> <span><b>ðŸ‘« Both:</b> Meet at the high <b>Sanctuary Portal</b> together!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F478; Juliet (Queen):</b> Stand on the wooden <b>Elevator Platform</b>.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Step on the <b>Blue Button</b> downstairs to hoist Queen up!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F478; Juliet (Queen):</b> Step on the <b>Pink Button</b> upstairs to drop the ramp for King.</span></div>
+       <div class="hint-step"><span class="hint-num">4</span> <span><b>&#x1F46B; Both:</b> Meet at the high <b>Sanctuary Portal</b> together!</span></div>`,
 
-      // 3
+      // 3: Stepping Stones
       `Stage 3: Stepping Stones`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on Button 1 to freeze Stones 1 &amp; 2 in place.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Hop to Stone 2 and step on Button 2 to freeze Stones 3 &amp; 4.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Carry the Pink Cube across to unlock the exit portal!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F478; Juliet (Queen):</b> Step on Button 1 to freeze Stones 1 &amp; 2 in place.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Hop to Stone 2 and step on Button 2 to freeze Stones 3 &amp; 4.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Both:</b> Carry the Pink Cube across to unlock the exit portal!</span></div>`,
 
-      // 4
+      // 4: Double Gate
       `Stage 4: Double Gate`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on Button 1 on your corridor to open King's door.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Walk through and step on Button 2 to open Queen's door.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Leapfrog forward and unite at the Exit Portal!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F478; Juliet (Queen):</b> Step on Button 1 on your corridor to open King's door.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Walk through and step on Button 2 to open Queen's door.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Both:</b> Leapfrog forward and unite at the Exit Portal!</span></div>`,
 
-      // 5
+      // 5: Crystal Lift
       `Stage 5: Crystal Lift`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on the cyan button to raise King on Lift B.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Reach the cliff and step on the gold button to raise Queen on Lift A!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Celebrate at the high crystal sanctuary!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F478; Juliet (Queen):</b> Step on the cyan button to raise King on Lift B.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Reach the cliff and step on the gold button to raise Queen on Lift A!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Both:</b> Celebrate at the high crystal sanctuary!</span></div>`,
 
-      // 6
+      // 6: Moving Crossway
       `Stage 6: Moving Crossway`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš ï¸ Hazard:</b> Watch the golden ferry platform oscillating over the deep abyss!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Pick up the Pink Energy Cube. Time your jump onto the moving ferry.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Leap across with Queen and place the cube on the green gate switch!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x26A0;&#xFE0F; Hazard:</b> Watch the golden ferry platform oscillating over the deep abyss!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F478; Juliet (Queen):</b> Pick up the Pink Energy Cube. Time your jump onto the moving ferry.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> Leap across with Queen and place the cube on the green gate switch!</span></div>`,
 
-      // 7
+      // 7: Color Resonance
       `Stage 7: Color Resonance`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Walk through the <b>Pink Forcefield</b> (only Queen can enter).</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Walk through the <b>Blue Forcefield</b> (only King can enter).</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Step on the mutual plates inside to drop each other's drawbridges!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F478; Juliet (Queen):</b> Walk through the <b>Pink Forcefield</b> (only Queen can enter).</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Walk through the <b>Blue Forcefield</b> (only King can enter).</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Both:</b> Step on the mutual plates inside to drop each other's drawbridges!</span></div>`,
 
-      // 8
+      // 8: Laser Grid
       `Stage 8: Laser Grid`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš¡ DANGER:</b> The red laser sweeps along the catwalk! Don't touch it!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Step on the <b>Green Timed Plate</b> to cut power to the laser for 4 seconds!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> SPRINT across with the cube before the laser turns back on!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x26A0;&#xFE0F; Danger:</b> The red laser sweeps along the catwalk! Don't touch it!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F478; Juliet (Queen):</b> Step on the <b>Green Timed Plate</b> to cut power to the laser for 4 seconds!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> SPRINT across with the cube before the laser turns back on!</span></div>`,
 
-      // 9
+      // 9: Crumbling Steps
       `Stage 9: Crumbling Steps`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš ï¸ WARNING:</b> Stepping stones shake and drop into the void after 0.8s!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘« Keep Moving:</b> Leap from stone to stone with zero hesitation!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>âœ¨ Anchor:</b> Reach the far side and step on the gold plate to lock a solid bridge!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x26A0;&#xFE0F; Warning:</b> Stepping stones collapse 0.8s after stepping on them! Don't stand still!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F46B; Both:</b> Continuous running jumps! Cross the collapsing stones to solid ground.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> Stand on the reset plate if partner falls to restore the stones.</span></div>`,
 
-      // 10
+      // 10: Seesaw Bridge
       `Stage 10: Seesaw Bridge`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš–ï¸ Tilting Bridge:</b> The long seesaw pivots over the abyss!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Carry the heavy cube to the back switch to elevate the bridge's tip.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Run up the elevated incline and jump to the high exit ledge!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x2696;&#xFE0F; Tilting Bridge:</b> The bridge balances on a central fulcrum pivot!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F478; Juliet (Queen):</b> Place the heavy cube on the near end to elevate the bridge tip.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> Run up the elevated incline and jump to the high exit ledge!</span></div>`,
 
-      // 11
+      // 11: Timed Sprint
       `Stage 11: Timed Sprint`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>â±ï¸ TICK-TOCK:</b> The pink plate starts a strict 6-second countdown timer!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Sprint across the golden bridge before the 6 seconds run out!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Step on the blue latch plate to permanently lock the bridge open!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x23F1;&#xFE0F; TICK-TOCK:</b> The pink plate starts a strict 6-second countdown timer!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Sprint across the golden bridge before the 6 seconds run out!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> Step on the blue latch plate to permanently lock the bridge open!</span></div>`,
 
-      // 12
+      // 12: Conveyor Laser Maze
       `Stage 12: Conveyor Laser Maze`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸŒŠ Double Motion:</b> Two moving platforms traveling in opposite directions!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Hold the override button to shut down the center sweeping laser.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Transfer across the moving platforms to reach the exit portal!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F504; Double Motion:</b> Two moving platforms traveling in opposite directions!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F478; Juliet (Queen):</b> Hold the override button to shut down the center sweeping laser.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> Transfer across the moving platforms to reach the exit portal!</span></div>`,
 
-      // 13
+      // 13: Dual Energy Relay
       `Stage 13: Dual Energy Relay`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Ride the left aerial gondola to retrieve the Pink Energy Cube.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Ride the right aerial gondola to retrieve the Blue Energy Cube.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Place both cubes in the twin matrix sockets to power the summit bridge!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F478; Juliet (Queen):</b> Ride the left aerial gondola to retrieve the Pink Energy Cube.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Ride the right aerial gondola to retrieve the Blue Energy Cube.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Both:</b> Place both cubes in the twin matrix sockets to power the summit bridge!</span></div>`,
 
-      // 14
+      // 14: Skyward Bouncers
       `Stage 14: Skyward Bouncers`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ”ï¸ High Ascent:</b> A 3-tier vertical cliff climb!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Ride Lift 1 to Tier 2, then step on crumbling tiles to reach Lift 2 switch.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Ascend to Tier 3 on Lift 2 and summon Queen to the top!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x2B06;&#xFE0F; High Ascent:</b> A 3-tier vertical cliff climb!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F478; Juliet (Queen):</b> Ride Lift 1 to Tier 2, then step on crumbling tiles to reach Lift 2 switch.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F934; Romeo (King):</b> Ascend to Tier 3 on Lift 2 and summon Queen to the top!</span></div>`,
 
-      // 15
+      // 15: Domino Cascade
       `Stage 15: Domino Cascade`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ§© 3-Stage Chain:</b> Use Cube 1 on Ground to raise the lift to Tier 2.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Ride up and bring down Cube 2 from Tier 2.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Place Cube 2 on Plate 2 to extend the final skyway bridge!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x26D3;&#xFE0F; 3-Stage Chain:</b> Use Cube 1 on Ground to raise the lift to Tier 2.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F934; Romeo (King):</b> Ride up and bring down Cube 2 from Tier 2.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Both:</b> Place Cube 2 on Plate 2 to extend the final skyway bridge!</span></div>`,
 
-      // 16
+      // 16: Mirror Chamber
       `Stage 16: Mirror Chamber`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸªž Mirrored Gauntlet:</b> Separate identical corridors with sweeping lasers!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘« In Sync:</b> Dodge lasers and jump across oscillating platforms in parallel!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>âš¡ Climax:</b> Step on both green mirror plates at the exact same moment!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F52E; Mirrored Gauntlet:</b> Separate identical corridors with sweeping lasers!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F46B; In Sync:</b> Dodge lasers and jump across oscillating platforms in parallel!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x26A0;&#xFE0F; Climax:</b> Step on both green mirror plates at the exact same moment!</span></div>`,
 
-      // 17
+      // 17: Cloud Spire Tower
       `Stage 17: Cloud Spire Tower`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ—¼ Mega Tower:</b> 4 vertical tiers reaching up into the cosmos!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen & ðŸ¤´ King:</b> Alternate elevators, dodge the sweeping laser on Tier 1.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Summit:</b> Leap across crumbling stones to reach the Tier 3 summit lift!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x1F3D7;&#xFE0F; Mega Tower:</b> 4 vertical tiers reaching up into the cosmos!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x1F478; Queen &amp; &#x1F934; King:</b> Alternate elevators, dodge the sweeping laser on Tier 1.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Summit:</b> Leap across crumbling stones to reach the Tier 3 summit lift!</span></div>`,
 
-      // 18
+      // 18: Laser Gauntlet
       `Stage 18: Laser Gauntlet`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš¡ Aerial Tightrope:</b> Narrow catwalks with 3 lasers at different speeds!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>â±ï¸ Shield Plates:</b> Use the 5-second shield plates to time safe crossings.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Cross:</b> Communicate verbally and walk across one laser at a time!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x26A0;&#xFE0F; Aerial Tightrope:</b> Narrow catwalks with 3 lasers at different speeds!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x23F1;&#xFE0F; Shield Plates:</b> Use the 5-second shield plates to time safe crossings.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Cross:</b> Communicate verbally and walk across one laser at a time!</span></div>`,
 
-      // 19
+      // 19: Trial of Trust
       `Stage 19: Trial of Trust`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ¤ Faith in Partner:</b> Juliet's path is invisible unless Romeo stands on the Blue Altar!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤ Reverse Trust:</b> Romeo's path is impassable unless Juliet stands on the Pink Altar!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Manifest:</b> Each partner literally holds up the ground under the other's feet!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x2728; Faith in Partner:</b> Juliet's path is invisible unless Romeo stands on the Blue Altar!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x2728; Reverse Trust:</b> Romeo's path is impassable unless Juliet stands on the Pink Altar!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F46B; Leap:</b> Trust each other completely and walk forward together over the void!</span></div>`,
 
-      // 20
-      `Stage 20: Eternal Sanctuary (GRAND FINALE)`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘‘ Phase 1:</b> Traverse the dual orbital moving platforms while dodging cosmic lasers!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ’– Phase 2:</b> Grab the Sacred Soul Cubes and ride the twin spiral elevators to Tier 3!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Phase 3:</b> Place both cubes into the Twin Heart Altars and step into the Giant Crowned Heart Vortex to conquer all 20 stages!</span></div>`
+      // 20: Eternal Sanctuary
+      `Stage 20: Eternal Sanctuary`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>&#x2728; Phase 1:</b> Traverse the triple moving lifts and crumbling stepping stones.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>&#x2728; Phase 2:</b> Grab the two eternal energy cubes from opposite crystal wings.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>&#x1F3C6; Grand Finale:</b> Place both cubes on the central altar to ignite the Eternal Love Portal!</span></div>`
     ];
 
     const idx = (level - 1) * 2;
@@ -5719,6 +5743,7 @@ class PepeloCoopGame {
 
 window.pepeloGame = new PepeloCoopGame();
 
+
 // --- js\games\sync.js ---
 // Mini-Game 1: "Telepathy: Think as One" (Couple Mind-Match)
 // Both players answer simultaneously - see if your thoughts synchronize!
@@ -5727,62 +5752,62 @@ class SyncGame {
   constructor() {
     this.questions = [
       {
-        cat: '💖 Romantic Chemistry',
+        cat: '\u{1F496} Romantic Chemistry',
         q: 'Our ideal cozy Friday night together?',
         options: ['Snuggling up with movies & takeout', 'Romantic candlelit dinner & wine', 'Late-night long drive with music', 'Cooking a delicious meal together']
       },
       {
-        cat: '😂 Daily Life & Habits',
+        cat: '\u{2615} Daily Life & Habits',
         q: 'Who takes longer to get ready to go out?',
-        options: ['Definitely Her 👸', 'Definitely Him 🤴', 'Both take equal time', 'Depends on where we are going']
+        options: ['Definitely Her \u{1F478}', 'Definitely Him \u{1F934}', 'Both take equal time', 'Depends on where we are going']
       },
       {
-        cat: '✈️ Travel & Adventure',
+        cat: '\u{1F30D} Travel & Adventure',
         q: 'If we could teleport to a dream getaway right now, where?',
         options: ['Sun-kissed tropical beach & private villa', 'Snowy mountain cabin by a warm fireplace', 'Enchanting historic streets in Europe', 'Cozy remote forest treehouse']
       },
       {
-        cat: '🍕 Food & Cravings',
+        cat: '\u{1F355} Food & Cravings',
         q: 'It is midnight and we are starving. What are we eating?',
         options: ['Cheesy loaded pizza', 'Burgers & crispy fries', 'Sweet ice cream & brownies', 'Spicy midnight noodles']
       },
       {
-        cat: '💖 Romantic Chemistry',
+        cat: '\u{1F496} Romantic Chemistry',
         q: 'What is the most attractive quality about your partner?',
         options: ['Their warm, radiant smile & eyes', 'Their sense of humor & laughs', 'Their deep caring heart & loyalty', 'Their intelligence & ambition']
       },
       {
-        cat: '🤔 Would You Rather',
-        q: 'Would you rather have a 1-hour relaxing massage or your partner cook your dream feast?',
+        cat: '\u{1F914} Would You Rather',
+        cat: '\u{1F914} Would You Rather',
         options: ['1-Hour dreamy massage from partner', 'Partner cooks delicious 3-course feast', 'Do both together!']
       },
       {
-        cat: '😂 Daily Life & Habits',
+        cat: '\u{2615} Daily Life & Habits',
         q: 'Who is more likely to fall asleep first during a movie?',
-        options: ['Him 🤴 - snoring in 15 mins!', 'Her 👸 - out like a light!', 'Both stay awake together', 'Depends on how boring the movie is']
+        options: ['Him \u{1F934} - snoring in 15 mins!', 'Her \u{1F478} - out like a light!', 'Both stay awake together', 'Depends on how boring the movie is']
       },
       {
-        cat: '💖 Romantic Chemistry',
+        cat: '\u{1F496} Romantic Chemistry',
         q: 'Who was the first one to realize they had feelings?',
-        options: ['He knew first! 🤴', 'She knew first! 👸', 'At the exact same moment ✨', 'Still a mystery to this day!']
+        options: ['He knew first! \u{1F934}', 'She knew first! \u{1F478}', 'At the exact same moment \u{2728}', 'Still a mystery to this day!']
       },
       {
-        cat: '🧠 Deep Connection',
+        cat: '\u{1F9E0} Deep Connection',
         q: 'What makes you feel most loved and appreciated?',
         options: ['Warm hugs & gentle physical touch', 'Sweet words of praise & love notes', 'Thoughtful surprise gifts & acts', 'Undivided quality time together']
       },
       {
-        cat: '😂 Daily Life & Habits',
+        cat: '\u{2615} Daily Life & Habits',
         q: 'Who is the bigger drama queen when having a mild cold/fever?',
-        options: ['Him 🤴 (needs hospital care!)', 'Her 👸 (needs 24/7 pampered princess treatment!)', 'Neither, we are tough warriors!', 'Both act like babies!']
+        options: ['Him \u{1F934} (needs hospital care!)', 'Her \u{1F478} (needs 24/7 pampered princess treatment!)', 'Neither, we are tough warriors!', 'Both act like babies!']
       },
       {
-        cat: '🤔 Would You Rather',
-        q: 'Would you rather receive 100 cute text messages a day or 1 long heartfelt call at night?',
-        options: ['100 cute texts throughout the day 💬', '1 deep, intimate late-night call 🌙']
+        cat: '\u{1F914} Would You Rather',
+        cat: '\u{1F914} Would You Rather',
+        options: ['100 cute texts throughout the day \u{1F48C}', '1 deep, intimate late-night call \u{1F4DE}']
       },
       {
-        cat: '🧠 Deep Connection',
+        cat: '\u{1F9E0} Deep Connection',
         q: 'When we have a small disagreement, what resolves it fastest?',
         options: ['A warm hug and saying sorry', 'A little cooling-off space, then talking', 'Making each other laugh with a silly face', 'Ordering favorite comfort food']
       }
@@ -5863,7 +5888,7 @@ class SyncGame {
     const waitingNotice = document.getElementById('sync-waiting');
     if (this.partnerChoice === null && !window.network.isSingleDevice) {
       if (waitingNotice) {
-        waitingNotice.textContent = `Locked in! Waiting for ${window.network.partner?.name || 'partner'}... 🔒`;
+        waitingNotice.textContent = `Locked in! Waiting for ${window.network.partner?.name || "partner"}... \u{23F3}`;
         waitingNotice.style.display = 'block';
       }
     } else {
@@ -5904,7 +5929,7 @@ class SyncGame {
       window.soundFx.playSuccess();
       window.app.triggerConfetti();
       resultHtml = `
-        <div style="font-size: 2.2rem; margin-bottom: 6px;">✨ 100% SOULMATE SYNC! ✨</div>
+        <div style="font-size: 2.2rem; margin-bottom: 6px;">\u{1F496} 100% SOULMATE SYNC! \u{2728}</div>
         <div style="font-weight: 700; color: #06d6a0; margin-bottom: 8px;">You both picked:</div>
         <div style="background: rgba(6, 214, 160, 0.2); border: 1.5px solid #06d6a0; padding: 12px; border-radius: 12px; font-weight: 600;">
           "${myText}"
@@ -5914,7 +5939,7 @@ class SyncGame {
     } else {
       window.soundFx.playOops();
       resultHtml = `
-        <div style="font-size: 2rem; margin-bottom: 6px;">⚡ Opposites Attract! 😉</div>
+        <div style="font-size: 2rem; margin-bottom: 6px;">\u{26A1} Opposites Attract! \u{1F496}</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; text-align: left;">
           <div style="background: rgba(255, 77, 141, 0.15); border: 1px solid var(--primary-pink); padding: 10px; border-radius: 10px;">
             <div style="font-size: 0.75rem; color: var(--primary-pink); font-weight: 700;">${myName}:</div>
@@ -6043,9 +6068,9 @@ class QuizGame {
 
     if (roleIndicator) {
       if (isStar) {
-        roleIndicator.innerHTML = `<span style="color: var(--accent-gold);">⭐ YOU ARE THE STAR!</span> Answer honestly about yourself:`;
+        roleIndicator.innerHTML = `<span style="color: var(--accent-gold);">\u{2B50} YOU ARE THE STAR!</span> Answer honestly about yourself:`;
       } else {
-        roleIndicator.innerHTML = `<span style="color: var(--primary-pink);">🕵️ YOU ARE GUESSING!</span> Guess what <b>${starName}</b> will pick:`;
+        roleIndicator.innerHTML = `<span style="color: var(--primary-pink);">\u{1F575}\u{FE0F} YOU ARE GUESSING!</span> Guess what <b>${starName}</b> will pick:`;
       }
     }
 
@@ -6132,7 +6157,7 @@ class QuizGame {
     let html = '';
     if (isCorrect) {
       html = `
-        <div style="font-size: 2rem;">🎯 BINGO! PERFECT GUESS!</div>
+        <div style="font-size: 2rem;">\u{1F389} BINGO! PERFECT GUESS!</div>
         <div style="color: #06d6a0; font-weight: 700; margin: 6px 0;">+10 Points to ${guesserName}!</div>
         <div style="background: rgba(6, 214, 160, 0.2); padding: 12px; border-radius: 12px; font-weight: 600;">
           "${starAnswerText}"
@@ -6140,7 +6165,7 @@ class QuizGame {
       `;
     } else {
       html = `
-        <div style="font-size: 1.8rem;">🙈 Almost! But not quite!</div>
+        <div style="font-size: 1.8rem;">\u{1F914} Almost! But not quite!</div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; text-align: left;">
           <div style="background: rgba(255, 77, 141, 0.2); padding: 10px; border-radius: 10px;">
             <div style="font-size: 0.75rem; color: var(--accent-gold); font-weight: 700;">${starName}'s Real Answer:</div>
@@ -6201,7 +6226,7 @@ window.quizGame = new QuizGame();
 
 
 // --- js\games\wheel.js ---
-// Mini-Game 3: "Truth, Dare & Pillow Talk Wheel"
+      { name: '\u{1F48C} Pillow Talk', color: '#9d4edd', type: 'pillow' },
 // Canvas-rendered interactive spinning wheel with synchronized physics
 
 class WheelGame {
@@ -6211,12 +6236,12 @@ class WheelGame {
     this.isSpinning = false;
     this.currentAngle = 0;
     this.segments = [
-      { name: '🌸 Sweet Truth', color: '#ff4d8d', type: 'sweet' },
-      { name: '🔥 Spicy Dare', color: '#ff2b76', type: 'spicy' },
-      { name: '🧠 Pillow Talk', color: '#9d4edd', type: 'pillow' },
-      { name: '🎭 Wild Dare', color: '#ffd166', type: 'wild' },
-      { name: '💖 Confession', color: '#ff758f', type: 'confess' },
-      { name: '💋 Flirty Action', color: '#e63946', type: 'flirt' }
+      { name: '\u{1F496} Sweet Truth', color: '#ff4d8d', type: 'sweet' },
+      { name: '\u{1F525} Spicy Dare', color: '#ff2b76', type: 'spicy' },
+      { name: '\u{1F48C} Pillow Talk', color: '#9d4edd', type: 'pillow' },
+      { name: '\u{1F3B0} Wild Dare', color: '#ffd166', type: 'wild' },
+      { name: '\u{1F49C} Confession', color: '#ff758f', type: 'confess' },
+      { name: '\u{1F48B} Flirty Action', color: '#e63946', type: 'flirt' }
     ];
 
     this.decks = {
@@ -6257,7 +6282,7 @@ class WheelGame {
       flirt: [
         'Send a playful flirty kiss emoji attack or blow a real kiss right now!',
         'What is the most kissable feature on your partner?',
-        'Rate your partner attractiveness from 1 to 10 (careful with your answer! 😉)',
+        'Rate your partner attractiveness from 1 to 10 (careful with your answer! \u{1F61D})',
         'Send your partner a 5-second flirty audio recording right now!'
       ]
     };
@@ -6332,7 +6357,7 @@ class WheelGame {
     this.ctx.font = '16px sans-serif';
     this.ctx.textAlign = 'center';
     this.ctx.textBaseline = 'middle';
-    this.ctx.fillText('💖', center, center);
+    this.ctx.fillText('\u{1F496}', center, center);
   }
 
   startSpin() {
@@ -6426,7 +6451,7 @@ class WheelGame {
     window.soundFx.playSuccess();
     const modal = document.getElementById('wheel-modal');
     if (modal) modal.classList.remove('show');
-    window.app.showToast('Challenge completed! You two are adorable! 💖');
+    window.app.showToast('Challenge completed! You two are adorable! \u{1F496}');
   }
 }
 
@@ -6589,7 +6614,7 @@ class DuelGame {
 
     if (startBtn) {
       startBtn.style.display = 'inline-flex';
-      startBtn.textContent = 'PLAY AGAIN 🔄';
+      startBtn.textContent = 'PLAY AGAIN \u{26A1}';
     }
     if (tapBtn) tapBtn.style.display = 'none';
 
@@ -6601,7 +6626,7 @@ class DuelGame {
     if (this.meterPosition > 52) {
       // Female side won
       const femaleWon = (myRole === 'female');
-      winnerText = femaleWon ? `👑 ${myName} (Queen) WON THE TUG OF LOVE! 🎉` : `👸 ${partnerName} Won! Better luck next time!`;
+      winnerText = femaleWon ? `\u{1F451} ${myName} (Queen) WON THE TUG OF LOVE! \u{1F389}` : `\u{1F496} ${partnerName} Won! Better luck next time!`;
       if (femaleWon) {
         window.soundFx.playFanfare();
         window.app.triggerConfetti();
@@ -6611,7 +6636,7 @@ class DuelGame {
     } else if (this.meterPosition < 48) {
       // Male side won
       const maleWon = (myRole === 'male');
-      winnerText = maleWon ? `👑 ${myName} (King) WON THE TUG OF LOVE! 🎉` : `🤴 ${partnerName} Won! Better luck next time!`;
+      winnerText = maleWon ? `\u{1F451} ${myName} (King) WON THE TUG OF LOVE! \u{1F389}` : `\u{1F496} ${partnerName} Won! Better luck next time!`;
       if (maleWon) {
         window.soundFx.playFanfare();
         window.app.triggerConfetti();
@@ -6619,7 +6644,7 @@ class DuelGame {
         window.soundFx.playOops();
       }
     } else {
-      winnerText = "It's a DEAD HEAT TIE! Perfect couple balance! ⚖️💖";
+      winnerText = "It's a DEAD HEAT TIE! Perfect couple balance! \u{1F496}\u{2728}";
       window.soundFx.playSuccess();
     }
 
@@ -6638,7 +6663,7 @@ class DuelGame {
       reflexBox.style.borderColor = 'rgba(255, 255, 255, 0.2)';
     }
     if (reflexStatus) {
-      reflexStatus.innerHTML = `⏳ WAIT FOR PINK... <br><small style="font-size:0.75rem;">(Do not tap yet or penalty!)</small>`;
+      reflexStatus.innerHTML = `\u{23F3} WAIT FOR PINK... <br><small style="font-size:0.75rem;">(Do not tap yet or penalty!)</small>`;
     }
 
     // Host or single device triggers the random timer
@@ -6664,7 +6689,7 @@ class DuelGame {
       reflexBox.style.boxShadow = '0 0 40px rgba(255, 77, 141, 0.8)';
     }
     if (reflexStatus) {
-      reflexStatus.innerHTML = `💥 TAP NOW! 💥`;
+      reflexStatus.innerHTML = `\u{26A1} TAP NOW! \u{26A1}`;
     }
     window.soundFx.playHeartbeat();
   }
@@ -6673,10 +6698,10 @@ class DuelGame {
     const reflexStatus = document.getElementById('reflex-status');
 
     if (this.reflexState === 'waiting') {
-      // False start!
+        reflexStatus.innerHTML = `\u{26A0}\u{FE0F} False start! You tapped too early!`;
       window.soundFx.playOops();
       if (reflexStatus) {
-        reflexStatus.innerHTML = `⚠️ False start! You tapped too early!`;
+        reflexStatus.innerHTML = `\u{26A0}\u{FE0F} False start! You tapped too early!`;
       }
       return;
     }
@@ -6689,7 +6714,7 @@ class DuelGame {
 
       const myName = window.network.player.name;
       if (reflexStatus) {
-        reflexStatus.innerHTML = `🏆 YOU WON! <br><small>${reactionTime}ms ultra fast!</small>`;
+        reflexStatus.innerHTML = `\u{1F3C6} YOU WON! <br><small>${reactionTime}ms ultra fast!</small>`;
       }
 
       window.network.send('DUEL_REFLEX_WIN', {
@@ -6704,7 +6729,7 @@ class DuelGame {
     window.soundFx.playOops();
     const reflexStatus = document.getElementById('reflex-status');
     if (reflexStatus) {
-      reflexStatus.innerHTML = `⚡ ${winnerName} tapped first! (${ms}ms)`;
+      reflexStatus.innerHTML = `\u{26A1} ${winnerName} tapped first! (${ms}ms)`;
     }
   }
 }
@@ -6714,7 +6739,7 @@ window.duelGame = new DuelGame();
 
 // --- js\games\tictactoe.js ---
 // Mini-Game 5: "Crowns & Hearts: Tic-Tac-Toe DUO"
-// King 🤴 (Blue) vs Queen 👸 (Pink) with real-time turn sync and win streaks
+// King (Blue) vs Queen (Pink) with real-time turn sync and win streaks
 
 class TicTacToeGame {
   constructor() {
@@ -6754,7 +6779,7 @@ class TicTacToeGame {
         cell.className = 'ttt-cell';
         if (val) {
           cell.classList.add('taken');
-          cell.innerHTML = val === 'female' ? '👸' : '🤴';
+          cell.innerHTML = val === 'female' ? '\u{1F478}' : '\u{1F934}';
         }
         if (this.winLine && this.winLine.includes(idx)) {
           cell.classList.add('win-cell');
@@ -6767,18 +6792,18 @@ class TicTacToeGame {
     if (statusEl) {
       if (this.winner) {
         if (this.winner === 'draw') {
-          statusEl.innerHTML = `<span style="color: var(--accent-gold);">🤝 It's a Draw! Both are equally clever!</span>`;
+          statusEl.innerHTML = `<span style="color: var(--accent-gold);">\u{1F91D} It's a Draw! Both are equally clever!</span>`;
         } else {
           const winnerName = (this.winner === window.network.player.role)
-            ? 'YOU WON! 🏆'
-            : `${window.network.partner?.name || 'Partner'} Won! 👑`;
+            ? 'YOU WON! \u{1F389}'
+            : `${window.network.partner?.name || "Partner"} Won! \u{1F44F}`;
           const winColor = (this.winner === 'female') ? 'var(--primary-pink)' : 'var(--primary-blue)';
           statusEl.innerHTML = `<span style="color: ${winColor}; font-weight:700;">${winnerName}</span>`;
         }
       } else {
         const isMyTurn = (this.currentTurn === window.network.player.role);
         if (isMyTurn) {
-          statusEl.innerHTML = `<span style="color: var(--accent-gold); font-weight:700;">✨ YOUR TURN! Tap an empty square!</span>`;
+          statusEl.innerHTML = `<span style="color: var(--accent-gold); font-weight:700;">\u{2728} YOUR TURN! Tap an empty square!</span>`;
         } else {
           const partnerName = window.network.partner?.name || 'Partner';
           statusEl.innerHTML = `<span style="color: var(--text-muted);">Waiting for ${partnerName}'s move...</span>`;
@@ -6788,8 +6813,8 @@ class TicTacToeGame {
 
     if (scoreEl) {
       scoreEl.innerHTML = `
-        <span style="color: var(--primary-pink);">👸 Queen: ${this.queenWins}</span> | 
-        <span style="color: var(--primary-blue);">🤴 King: ${this.kingWins}</span> | 
+        <span style="color: var(--primary-pink);">&#x1F478; Queen: ${this.queenWins}</span> | 
+        <span style="color: var(--primary-blue);">&#x1F934; King: ${this.kingWins}</span> | 
         <span style="color: var(--text-muted);">Ties: ${this.draws}</span>
       `;
     }
@@ -7058,7 +7083,7 @@ class CanvasGame {
       senderName: window.network.player.name
     });
 
-    window.app.showToast('💌 Secret love note sent to your partner!');
+    window.app.showToast('\u{1F48C} Secret love note sent to your partner!');
     noteInput.value = '';
   }
 
@@ -7070,7 +7095,7 @@ class CanvasGame {
     const senderEl = document.getElementById('secret-note-sender');
     const textEl = document.getElementById('secret-note-text');
 
-    if (senderEl) senderEl.textContent = `💌 Secret Note from ${senderName}:`;
+    if (senderEl) senderEl.textContent = `\u{1F48C} Secret Note from ${senderName}:`;
     if (textEl) textEl.textContent = `"${note}"`;
     if (overlay) overlay.style.display = 'flex';
   }
@@ -7151,7 +7176,7 @@ class AppController {
     });
 
     window.network.on('error', (err) => {
-      this.showToast(`⚠️ ${err}`);
+      this.showToast(`\u{26A0}\u{FE0F} ${err}`);
     });
 
     window.network.on('message', ({ type, payload }) => {
@@ -7160,7 +7185,14 @@ class AppController {
       } else if (type === 'LOVE_BELL') {
         this.receiveLoveBell(payload.senderName);
       } else if (type === 'SWITCH_GAME') {
+        const targetLvl = Math.max(1, Math.min(20, payload.level || (window.auth ? window.auth.getUnlockedLevel() : 1)));
+        if (window.pepeloGame) {
+          window.pepeloGame.currentLevelIndex = targetLvl;
+        }
         this.openGame(payload.gameId, false);
+        if (payload.gameId === 'pepelo' && window.pepeloGame) {
+          window.pepeloGame.jumpToLevel(targetLvl);
+        }
       }
     });
 
@@ -7169,11 +7201,11 @@ class AppController {
     if (soundToggle) {
       soundToggle.onclick = () => {
         const isMuted = window.soundFx.toggleMute();
-        soundToggle.textContent = isMuted ? '🔇' : '🔔';
+        soundToggle.textContent = isMuted ? '\u{1F515}' : '\u{1F514}';
         this.showToast(isMuted ? 'Muted' : 'Sound ON');
       };
       if (window.soundFx.isMuted()) {
-        soundToggle.textContent = '🔇';
+        soundToggle.textContent = '\u{1F515}';
       }
     }
   }
@@ -7216,14 +7248,14 @@ class AppController {
 
   getPlayerProfile() {
     const nameInput = document.getElementById('player-name-input');
-    const name = nameInput?.value.trim() || (this.selectedRole === 'female' ? 'Juliet 👸' : 'Romeo 🤴');
+    const name = nameInput?.value.trim() || (this.selectedRole === 'female' ? 'Juliet' : 'Romeo');
     localStorage.setItem('twohearts_name', name);
     localStorage.setItem('twohearts_role', this.selectedRole);
 
     return {
       name: name,
       role: this.selectedRole,
-      avatar: this.selectedRole === 'female' ? '👸' : '🤴'
+      avatar: this.selectedRole === 'female' ? '\u{1F478}' : '\u{1F934}'
     };
   }
 
@@ -7249,20 +7281,20 @@ class AppController {
           
           <div style="margin: 12px 0;">
             <img src="${qrUrl}" alt="Scan QR Code" style="border-radius: 12px; border: 2px solid var(--border-glass); width: 140px; height: 140px; background: #fff; padding: 4px;" />
-            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Or let them scan this QR with their camera 📸</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 4px;">Or let them scan this QR with their camera \u{1F4F7}</div>
           </div>
 
           <div style="display: flex; gap: 8px; justify-content: center; margin-top: 10px;">
             <button class="btn btn-secondary" onclick="window.app.copyRoomLink('${shareUrl}')" style="font-size: 0.85rem; padding: 8px 14px;">
-              📋 Copy Link
+              \u{1F4CB} Copy Link
             </button>
             <button class="btn btn-primary" onclick="window.app.shareInvite('${roomCode}', '${shareUrl}')" style="font-size: 0.85rem; padding: 8px 14px;">
-              💬 Share Invite
+              \u{1F4AC} Share Invite
             </button>
           </div>
         </div>
         <div style="text-align: center; color: var(--accent-gold); font-size: 0.9rem; animation: pulse-heart 2s infinite;">
-          💓 Waiting for your partner to join...
+          \u{23F3} Waiting for your partner to join...
         </div>
       `;
     }
@@ -7296,7 +7328,7 @@ class AppController {
   copyRoomLink(url) {
     window.soundFx.playPop();
     navigator.clipboard.writeText(url).then(() => {
-      this.showToast('✅ Invite link copied to clipboard!');
+      this.showToast('\u{2705} Invite link copied to clipboard!');
     }).catch(() => {
       this.showToast('URL: ' + url);
     });
@@ -7306,7 +7338,7 @@ class AppController {
     window.soundFx.playPop();
     if (navigator.share) {
       navigator.share({
-        title: 'Play TwoHearts with me! 💖',
+        title: 'Play TwoHearts with me! \u{1F496}',
         text: `Hey! Join my TwoHearts couple game room: ${roomCode}`,
         url: url
       }).catch(() => {});
@@ -7320,10 +7352,11 @@ class AppController {
     window.soundFx.playSuccess();
     this.triggerConfetti();
 
-    this.showToast(`🎉 ${partner.name} joined the room!`);
+    this.showToast(`\u{1F496} ${partner.name} joined the room!`);
 
     // Switch to game selection hub
     this.showScreen('screen-hub');
+    this.updateHubStageIndicator();
 
     // Update duo profile banner
     this.updateDuoHeader(partner);
@@ -7355,13 +7388,13 @@ class AppController {
           Create a private room and invite your partner via link, code, or QR!
         </p>
         <button class="btn btn-primary btn-block btn-lg" onclick="window.app.handleCreateRoom()">
-          ✨ Create Private Room
+          \u{2728} Create Private Room
         </button>
       `;
     }
 
     // 6. Display clear notice to player
-    this.showToast('💔 Your partner closed the game. Returned to Home Page.');
+    this.showToast('\u{1F494} Your partner closed the game. Returned to Home Page.');
   }
 
   updateDuoHeader(partner) {
@@ -7436,6 +7469,7 @@ class AppController {
     window.soundFx.playPop();
     if (window.pepeloGame) window.pepeloGame.stop();
     this.showScreen('screen-hub');
+    this.updateHubStageIndicator();
     window.network.send('SWITCH_GAME', { gameId: 'hub' });
   }
 
@@ -7470,7 +7504,7 @@ class AppController {
   sendLoveBell() {
     window.soundFx.playBell();
     this.triggerConfetti(20);
-    this.showToast('🔔 Love bell sent to your partner!');
+    this.showToast('\u{1F514} Love bell sent to your partner!');
 
     window.network.send('LOVE_BELL', {
       senderName: window.network.player.name
@@ -7480,9 +7514,9 @@ class AppController {
   receiveLoveBell(senderName) {
     window.soundFx.playBell();
     this.triggerConfetti(30);
-    this.showToast(`🔔 ${senderName} is thinking of you with lots of love! 💖`);
-    this.spawnFloatingReaction('💖', false);
-    this.spawnFloatingReaction('🔔', false);
+    this.showToast(`\u{1F514} ${senderName} is thinking of you with lots of love! \u{1F496}`);
+    this.spawnFloatingReaction('\u{1F496}', false);
+    this.spawnFloatingReaction('\u{1F496}', false);
   }
 
   // --- TOAST NOTIFICATIONS ---
