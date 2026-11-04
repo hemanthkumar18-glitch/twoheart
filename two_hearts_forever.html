@@ -6226,7 +6226,7 @@ window.quizGame = new QuizGame();
 
 
 // --- js\games\wheel.js ---
-      { name: '\u{1F48C} Pillow Talk', color: '#9d4edd', type: 'pillow' },
+// TwoHearts - Truth, Dare & Pillow Talk Wheel
 // Canvas-rendered interactive spinning wheel with synchronized physics
 
 class WheelGame {
@@ -7446,17 +7446,49 @@ class AppController {
     }
   }
 
+  updateHubStageIndicator() {
+    const resumeEl = document.getElementById('hub-pepelo-resume-badge');
+    const highest = (window.auth && typeof window.auth.getUnlockedLevel === 'function')
+      ? window.auth.getUnlockedLevel()
+      : Math.max(1, parseInt(localStorage.getItem('twohearts_last_stage') || '1', 10));
+    const stageNames = [
+      'Twin Bridges', 'The Elevator', 'Stepping Stones', 'Double Gate', 'Crystal Lift',
+      'Moving Crossway', 'Color Resonance', 'Laser Grid', 'Crumbling Steps', 'Seesaw Bridge',
+      'Timed Sprint', 'Conveyor Laser Maze', 'Dual Energy Relay', 'Skyward Bouncers', 'Domino Cascade',
+      'Mirror Chamber', 'Cloud Spire Tower', 'Dual Laser Gauntlet', 'Trial of Trust', 'Eternal Sanctuary'
+    ];
+    const name = stageNames[highest - 1] || `Stage ${highest}`;
+    if (resumeEl) {
+      resumeEl.textContent = `\u{25B6}\u{FE0F} Resume Stage ${highest}: ${name}`;
+    }
+  }
+
   openGame(gameId, broadcast = true) {
     window.soundFx.playPop();
 
+    let targetLevel = 1;
+    if (gameId === 'pepelo') {
+      if (window.auth && typeof window.auth.getUnlockedLevel === 'function') {
+        targetLevel = window.auth.getUnlockedLevel();
+      }
+      const localSaved = parseInt(localStorage.getItem('twohearts_last_stage') || '1', 10);
+      targetLevel = Math.max(1, Math.min(20, Math.max(targetLevel, localSaved)));
+      if (window.pepeloGame) {
+        window.pepeloGame.currentLevelIndex = targetLevel;
+      }
+    }
+
     if (broadcast) {
-      window.network.send('SWITCH_GAME', { gameId: gameId });
+      window.network.send('SWITCH_GAME', { gameId: gameId, level: targetLevel });
     }
 
     this.showScreen(`screen-${gameId}`);
 
     // Initialize specific game state
-    if (gameId === 'pepelo') window.pepeloGame.init('pepelo-viewport');
+    if (gameId === 'pepelo') {
+      window.pepeloGame.init('pepelo-viewport');
+      window.pepeloGame.jumpToLevel(targetLevel, false);
+    }
     else if (gameId === 'sync') window.syncGame.init();
     else if (gameId === 'quiz') window.quizGame.init();
     else if (gameId === 'wheel') window.wheelGame.init();
