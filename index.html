@@ -3676,10 +3676,9 @@ window.auth = new AuthManager();
 
 
 // --- js\pepelo_game.js ---
-// Pepelo 3D Co-op Adventure Game Engine for TwoHearts
-// A 3D Cooperative Puzzle-Platformer inspired by Pepelo / It Takes Two
-// Built with Three.js - 60 FPS mobile-first controls & real-time WebRTC/C++ sync
-// Features 20 Full Co-Op Levels with Hidden Hints, Level Select & Grand Finale!
+// TwoHearts - 3D Pepelo Co-Op Adventure Game Engine
+// Progressive Difficulty System (Stages 1 to 20: Easy -> Moderate -> Hard -> Expert -> Master)
+// Features Moving Platforms, Sweeping Lasers, Crumbling Platforms, Timed Switches, Color Barriers & Multi-Tier Puzzles!
 
 class PepeloCoopGame {
   constructor() {
@@ -3689,33 +3688,43 @@ class PepeloCoopGame {
     this.renderer = null;
     this.clock = new THREE.Clock();
 
+    // Players
     this.localPlayer = null;
     this.remotePlayer = null;
     this.carriedObject = null;
 
+    // Level State
     this.currentLevelIndex = 1;
     this.totalLevels = 20;
     this.levelObjects = [];
     this.platforms = [];
+    this.movingPlatforms = [];
+    this.crumblingPlatforms = [];
     this.pressurePlates = [];
+    this.timedPlates = [];
+    this.colorBarriers = [];
+    this.hazards = [];
     this.interactiveCubes = [];
     this.doors = [];
     this.elevators = [];
     this.portal = null;
+    this.checkpointPos = { x: 0, y: 1.5, z: 8 };
 
     // Movement & Input
     this.keys = { w: false, a: false, s: false, d: false, space: false, e: false };
     this.joystick = { active: false, dx: 0, dy: 0, touchId: null };
-    this.playerSpeed = 9.0;
+    this.playerSpeed = 9.2;
     this.gravity = -26.0;
-    this.jumpForce = 11.5;
+    this.jumpForce = 11.8;
 
-    // Network Sync
+    // Simulation & Timing
+    this.gameTime = 0;
     this.lastSyncTime = 0;
     this.syncRateMs = 50; // 20 updates per sec
     this.isLevelWon = false;
     this.isActive = false;
     this.isHintVisible = false;
+    this.isRespawning = false;
   }
 
   init(containerId = 'pepelo-viewport') {
@@ -3724,50 +3733,51 @@ class PepeloCoopGame {
 
     this.isActive = true;
     this.isLevelWon = false;
+    this.gameTime = 0;
 
     // 1. Scene Setup
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x120e2e);
-    this.scene.fog = new THREE.FogExp2(0x120e2e, 0.015);
+    this.scene.background = new THREE.Color(0x100c28);
+    this.scene.fog = new THREE.FogExp2(0x100c28, 0.012);
 
     // 2. Camera Setup (Isometric Third Person)
     const aspect = this.container.clientWidth / this.container.clientHeight;
-    this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 200);
-    this.camera.position.set(0, 16, 22);
+    this.camera = new THREE.PerspectiveCamera(45, aspect, 0.1, 300);
+    this.camera.position.set(0, 18, 24);
 
     // 3. Renderer Setup
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    
+
     // Clear previous children
     this.container.innerHTML = '';
     this.container.appendChild(this.renderer.domElement);
 
     // 4. Lighting
-    const hemiLight = new THREE.HemisphereLight(0xffd1e8, 0x1f193f, 0.8);
+    const hemiLight = new THREE.HemisphereLight(0xffd1e8, 0x1f193f, 0.85);
     this.scene.add(hemiLight);
 
-    const dirLight = new THREE.DirectionalLight(0xfff0f5, 1.2);
-    dirLight.position.set(20, 30, 20);
+    const dirLight = new THREE.DirectionalLight(0xfff5ea, 1.25);
+    dirLight.position.set(20, 35, 20);
     dirLight.castShadow = true;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
-    const d = 25;
+    const d = 30;
     dirLight.shadow.camera.left = -d;
     dirLight.shadow.camera.right = d;
     dirLight.shadow.camera.top = d;
     dirLight.shadow.camera.bottom = -d;
     this.scene.add(dirLight);
 
-    const pinkPoint = new THREE.PointLight(0xff4d8d, 1.5, 30);
-    pinkPoint.position.set(-10, 8, -5);
+    const pinkPoint = new THREE.PointLight(0xff4d8d, 1.6, 35);
+    pinkPoint.position.set(-10, 10, -5);
     this.scene.add(pinkPoint);
 
-    const bluePoint = new THREE.PointLight(0x4d94ff, 1.5, 30);
-    bluePoint.position.set(10, 8, -5);
+    const bluePoint = new THREE.PointLight(0x4d94ff, 1.6, 35);
+    bluePoint.position.set(10, 10, -5);
     this.scene.add(bluePoint);
 
     // 5. Build Characters
@@ -3786,152 +3796,15 @@ class PepeloCoopGame {
     // 8. Network Listeners
     this.setupNetworkListeners();
 
-    // Resize event
+    // 9. Resize Listener
     window.addEventListener('resize', () => this.onWindowResize());
 
-    // 9. Start Animation Loop
+    // 10. Start Animation Loop
+    this.clock.start();
     this.animate();
   }
 
   // --- CHARACTER CREATION ---
-
-  createExplorerModel(role = 'female', name = 'Player') {
-    const group = new THREE.Group();
-    const isFemale = (role === 'female');
-    const mainColor = isFemale ? 0xff4d8d : 0x2979ff;
-    const trimColor = isFemale ? 0xff758f : 0x70a1ff;
-    const skinColor = 0xffdfc4;
-
-    const bodyMat = new THREE.MeshStandardMaterial({ color: mainColor, roughness: 0.4 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: trimColor, roughness: 0.3 });
-    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.5 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x1f1933, roughness: 0.8 });
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
-    const whiteMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-
-    // Torso / Body
-    const torsoGeo = new THREE.CylinderGeometry(0.55, 0.65, 1.1, 16);
-    const torso = new THREE.Mesh(torsoGeo, bodyMat);
-    torso.position.y = 1.1;
-    torso.castShadow = true;
-    group.add(torso);
-
-    // Backpack
-    const packGeo = new THREE.BoxGeometry(0.7, 0.7, 0.4);
-    const backpack = new THREE.Mesh(packGeo, trimMat);
-    backpack.position.set(0, 1.2, -0.45);
-    backpack.castShadow = true;
-    group.add(backpack);
-
-    // Head
-    const headGeo = new THREE.SphereGeometry(0.55, 16, 16);
-    const head = new THREE.Mesh(headGeo, skinMat);
-    head.position.y = 2.0;
-    head.castShadow = true;
-    group.add(head);
-
-    // Eyes
-    const eyeGeo = new THREE.SphereGeometry(0.09, 8, 8);
-    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-    leftEye.position.set(-0.18, 2.05, 0.48);
-    group.add(leftEye);
-
-    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-    rightEye.position.set(0.18, 2.05, 0.48);
-    group.add(rightEye);
-
-    // Highlights
-    const hiGeo = new THREE.SphereGeometry(0.03, 6, 6);
-    const leftHi = new THREE.Mesh(hiGeo, whiteMat);
-    leftHi.position.set(-0.16, 2.08, 0.55);
-    group.add(leftHi);
-
-    const rightHi = new THREE.Mesh(hiGeo, whiteMat);
-    rightHi.position.set(0.20, 2.08, 0.55);
-    group.add(rightHi);
-
-    // Crown or Cap
-    if (isFemale) {
-      const crownGeo = new THREE.ConeGeometry(0.35, 0.35, 5);
-      const crownMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.6, roughness: 0.2 });
-      const crown = new THREE.Mesh(crownGeo, crownMat);
-      crown.position.set(0, 2.6, 0);
-      crown.rotation.x = Math.PI;
-      group.add(crown);
-    } else {
-      const capGeo = new THREE.CylinderGeometry(0.65, 0.65, 0.15, 16);
-      const cap = new THREE.Mesh(capGeo, trimMat);
-      cap.position.set(0, 2.5, 0);
-      group.add(cap);
-
-      const brimGeo = new THREE.CylinderGeometry(0.8, 0.8, 0.05, 16);
-      const brim = new THREE.Mesh(brimGeo, trimMat);
-      brim.position.set(0, 2.45, 0.2);
-      group.add(brim);
-    }
-
-    // Legs
-    const legGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.6, 8);
-    const leftLeg = new THREE.Mesh(legGeo, darkMat);
-    leftLeg.position.set(-0.25, 0.3, 0);
-    leftLeg.castShadow = true;
-    group.add(leftLeg);
-
-    const rightLeg = new THREE.Mesh(legGeo, darkMat);
-    rightLeg.position.set(0.25, 0.3, 0);
-    rightLeg.castShadow = true;
-    group.add(rightLeg);
-
-    // Arms
-    const armGeo = new THREE.CylinderGeometry(0.14, 0.14, 0.6, 8);
-    const leftArm = new THREE.Mesh(armGeo, bodyMat);
-    leftArm.position.set(-0.65, 1.2, 0);
-    group.add(leftArm);
-
-    const rightArm = new THREE.Mesh(armGeo, bodyMat);
-    rightArm.position.set(0.65, 1.2, 0);
-    group.add(rightArm);
-
-    // Floating Name Tag
-    const canvas = document.createElement('canvas');
-    canvas.width = 256;
-    canvas.height = 64;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = isFemale ? 'rgba(255, 77, 141, 0.85)' : 'rgba(41, 121, 255, 0.85)';
-    ctx.roundRect(10, 10, 236, 44, 20);
-    ctx.fill();
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    ctx.font = 'bold 24px Poppins, sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText((isFemale ? '👸 ' : '🤴 ') + name, 128, 32);
-
-    const spriteTex = new THREE.CanvasTexture(canvas);
-    const spriteMat = new THREE.SpriteMaterial({ map: spriteTex, depthTest: false });
-    const nameSprite = new THREE.Sprite(spriteMat);
-    nameSprite.position.set(0, 3.2, 0);
-    nameSprite.scale.set(2.5, 0.62, 1);
-    group.add(nameSprite);
-
-    return {
-      mesh: group,
-      leftLeg: leftLeg,
-      rightLeg: rightLeg,
-      leftArm: leftArm,
-      rightArm: rightArm,
-      head: head,
-      nameSprite: nameSprite,
-      role: role,
-      name: name,
-      velocity: new THREE.Vector3(),
-      isGrounded: false,
-      isCarrying: false,
-      walkCycle: 0
-    };
-  }
 
   buildCharacters() {
     const myRole = window.network.player.role || 'female';
@@ -3941,12 +3814,166 @@ class PepeloCoopGame {
     const partnerName = window.network.partner?.name || (partnerRole === 'female' ? 'Juliet' : 'Romeo');
 
     this.localPlayer = this.createExplorerModel(myRole, myName);
-    this.localPlayer.mesh.position.set(-3, 0, 8);
+    this.localPlayer.mesh.position.set(-3, 1, 8);
     this.scene.add(this.localPlayer.mesh);
 
     this.remotePlayer = this.createExplorerModel(partnerRole, partnerName);
-    this.remotePlayer.mesh.position.set(3, 0, 8);
+    this.remotePlayer.mesh.position.set(3, 1, 8);
     this.scene.add(this.remotePlayer.mesh);
+  }
+
+  createExplorerModel(gender, displayName) {
+    const group = new THREE.Group();
+
+    const isFemale = (gender === 'female');
+    const primaryColor = isFemale ? 0xff4d8d : 0x4d94ff;
+    const accentColor = isFemale ? 0xff85b3 : 0x80b3ff;
+    const skinColor = 0xffdfc4;
+    const hairColor = isFemale ? 0x613613 : 0x24180d;
+
+    const bodyMat = new THREE.MeshStandardMaterial({ color: primaryColor, roughness: 0.4 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: accentColor, roughness: 0.5 });
+    const skinMat = new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.6 });
+    const hairMat = new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.8 });
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x1f1933 });
+
+    // Torso (Beveled Capsule Look)
+    const torsoGeo = new THREE.CylinderGeometry(0.55, 0.48, 1.1, 16);
+    const torso = new THREE.Mesh(torsoGeo, bodyMat);
+    torso.position.y = 1.1;
+    torso.castShadow = true;
+    torso.receiveShadow = true;
+    group.add(torso);
+
+    // Heart Badge on Chest
+    const badgeGeo = new THREE.BoxGeometry(0.25, 0.25, 0.1);
+    const badgeMat = new THREE.MeshBasicMaterial({ color: isFemale ? 0xffd166 : 0x06d6a0 });
+    const badge = new THREE.Mesh(badgeGeo, badgeMat);
+    badge.position.set(0, 1.25, 0.52);
+    badge.rotation.z = Math.PI / 4;
+    group.add(badge);
+
+    // Head
+    const headGeo = new THREE.SphereGeometry(0.52, 20, 20);
+    const head = new THREE.Mesh(headGeo, skinMat);
+    head.position.y = 2.05;
+    head.castShadow = true;
+    group.add(head);
+
+    // Hair
+    if (isFemale) {
+      const hairGeo = new THREE.SphereGeometry(0.56, 16, 16);
+      const hair = new THREE.Mesh(hairGeo, hairMat);
+      hair.position.set(0, 2.15, -0.08);
+      group.add(hair);
+
+      const bunGeo = new THREE.SphereGeometry(0.28, 12, 12);
+      const bun = new THREE.Mesh(bunGeo, hairMat);
+      bun.position.set(0, 2.65, -0.2);
+      group.add(bun);
+    } else {
+      const hairGeo = new THREE.SphereGeometry(0.56, 16, 16, 0, Math.PI * 2, 0, Math.PI * 0.55);
+      const hair = new THREE.Mesh(hairGeo, hairMat);
+      hair.position.set(0, 2.1, 0);
+      group.add(hair);
+    }
+
+    // Eyes
+    const eyeGeo = new THREE.SphereGeometry(0.08, 8, 8);
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    leftEye.position.set(-0.18, 2.08, 0.46);
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    rightEye.position.set(0.18, 2.08, 0.46);
+    group.add(leftEye, rightEye);
+
+    // Blush Cheek Dots
+    const blushGeo = new THREE.CircleGeometry(0.09, 8);
+    const blushMat = new THREE.MeshBasicMaterial({ color: 0xff758f, transparent: true, opacity: 0.6 });
+    const leftBlush = new THREE.Mesh(blushGeo, blushMat);
+    leftBlush.position.set(-0.28, 1.95, 0.44);
+    leftBlush.rotation.y = -0.3;
+    const rightBlush = new THREE.Mesh(blushGeo, blushMat);
+    rightBlush.position.set(0.28, 1.95, 0.44);
+    rightBlush.rotation.y = 0.3;
+    group.add(leftBlush, rightBlush);
+
+    // Crown / Tiara
+    const crownMat = new THREE.MeshStandardMaterial({
+      color: 0xffd166,
+      metalness: 0.8,
+      roughness: 0.2,
+      emissive: 0xffa500,
+      emissiveIntensity: 0.3
+    });
+    const crownGeo = new THREE.CylinderGeometry(0.35, 0.28, 0.22, 5);
+    const crown = new THREE.Mesh(crownGeo, crownMat);
+    crown.position.set(0, 2.65, 0);
+    crown.castShadow = true;
+    group.add(crown);
+
+    // Arms
+    const armGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.7, 12);
+    armGeo.translate(0, -0.3, 0);
+
+    const leftArm = new THREE.Mesh(armGeo, accentMat);
+    leftArm.position.set(-0.68, 1.5, 0);
+    leftArm.castShadow = true;
+    group.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeo, accentMat);
+    rightArm.position.set(0.68, 1.5, 0);
+    rightArm.castShadow = true;
+    group.add(rightArm);
+
+    // Legs
+    const legGeo = new THREE.CylinderGeometry(0.18, 0.16, 0.65, 12);
+    legGeo.translate(0, -0.3, 0);
+
+    const leftLeg = new THREE.Mesh(legGeo, accentMat);
+    leftLeg.position.set(-0.28, 0.6, 0);
+    leftLeg.castShadow = true;
+    group.add(leftLeg);
+
+    const rightLeg = new THREE.Mesh(legGeo, accentMat);
+    rightLeg.position.set(0.28, 0.6, 0);
+    rightLeg.castShadow = true;
+    group.add(rightLeg);
+
+    // Overhead Name Tag
+    const canvas = document.createElement('canvas');
+    canvas.width = 256;
+    canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(16, 12, 40, 0.75)';
+    ctx.roundRect ? ctx.roundRect(10, 10, 236, 44, 20) : ctx.fillRect(10, 10, 236, 44);
+    ctx.fill();
+    ctx.strokeStyle = isFemale ? '#ff4d8d' : '#4d94ff';
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.font = 'bold 22px Poppins, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(`${isFemale ? 'ðŸ‘¸' : 'ðŸ¤´'} ${displayName}`, 128, 32);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const spriteMat = new THREE.SpriteMaterial({ map: texture, depthTest: false });
+    const sprite = new THREE.Sprite(spriteMat);
+    sprite.position.set(0, 3.2, 0);
+    sprite.scale.set(2.4, 0.6, 1);
+    group.add(sprite);
+
+    return {
+      mesh: group,
+      leftArm, rightArm,
+      leftLeg, rightLeg,
+      torso, head, crown,
+      velocity: new THREE.Vector3(0, 0, 0),
+      isGrounded: false,
+      walkCycle: 0,
+      gender,
+      displayName
+    };
   }
 
   // --- LEVEL MANAGEMENT ---
@@ -3955,11 +3982,19 @@ class PepeloCoopGame {
     this.levelObjects.forEach(obj => this.scene.remove(obj));
     this.levelObjects = [];
     this.platforms = [];
+    this.movingPlatforms = [];
+    this.crumblingPlatforms = [];
     this.pressurePlates = [];
+    this.timedPlates = [];
+    this.colorBarriers = [];
+    this.hazards = [];
     this.interactiveCubes = [];
     this.doors = [];
     this.elevators = [];
     this.portal = null;
+    this.carriedObject = null;
+    this.isRespawning = false;
+    this.checkpointPos = { x: 0, y: 1.5, z: 8 };
   }
 
   loadLevel(levelNumber) {
@@ -3967,35 +4002,35 @@ class PepeloCoopGame {
     this.isLevelWon = false;
     this.currentLevelIndex = Math.max(1, Math.min(this.totalLevels, levelNumber));
 
-    // Reset player positions
+    // Reset player positions & states
     if (this.localPlayer) {
-      this.localPlayer.mesh.position.set(-3, 1, 8);
+      this.localPlayer.mesh.position.set(-3, 1.2, 8);
       this.localPlayer.velocity.set(0, 0, 0);
     }
     if (this.remotePlayer) {
-      this.remotePlayer.mesh.position.set(3, 1, 8);
+      this.remotePlayer.mesh.position.set(3, 1.2, 8);
       this.remotePlayer.velocity.set(0, 0, 0);
     }
 
-    // Load appropriate level
+    // Load appropriate stage
     switch(this.currentLevelIndex) {
       case 1: this.buildLevel1_TwinBridges(); break;
       case 2: this.buildLevel2_AncientElevator(); break;
       case 3: this.buildLevel3_SteppingStones(); break;
       case 4: this.buildLevel4_DoubleGate(); break;
       case 5: this.buildLevel5_CrystalLift(); break;
-      case 6: this.buildLevel6_HeavyLifting(); break;
+      case 6: this.buildLevel6_MovingCrossway(); break;
       case 7: this.buildLevel7_ColorResonance(); break;
       case 8: this.buildLevel8_LaserGrid(); break;
-      case 9: this.buildLevel9_RotatingGears(); break;
+      case 9: this.buildLevel9_CrumblingSteps(); break;
       case 10: this.buildLevel10_SeesawBridge(); break;
-      case 11: this.buildLevel11_SynchronizedSprint(); break;
-      case 12: this.buildLevel12_ConveyorMaze(); break;
-      case 13: this.buildLevel13_StarryCrossway(); break;
+      case 11: this.buildLevel11_TimedSprint(); break;
+      case 12: this.buildLevel12_ConveyorLaserMaze(); break;
+      case 13: this.buildLevel13_DualEnergyRelay(); break;
       case 14: this.buildLevel14_SkywardBouncers(); break;
-      case 15: this.buildLevel15_CubeDomino(); break;
+      case 15: this.buildLevel15_DominoCascade(); break;
       case 16: this.buildLevel16_MirrorChamber(); break;
-      case 17: this.buildLevel17_CloudSpire(); break;
+      case 17: this.buildLevel17_CloudSpireTower(); break;
       case 18: this.buildLevel18_DualLaserGauntlet(); break;
       case 19: this.buildLevel19_TrialOfTrust(); break;
       case 20: this.buildLevel20_EternalSanctuary(); break;
@@ -4006,10 +4041,10 @@ class PepeloCoopGame {
   }
 
   // ==========================================
-  // LEVEL BUILDERS (LEVELS 1 TO 20)
+  // LEVEL BUILDERS (STAGES 1 TO 20)
   // ==========================================
 
-  // --- STAGE 1: The Twin Bridges ---
+  // --- STAGE 1: Twin Bridges (Tutorial: Buttons & Cube) ---
   buildLevel1_TwinBridges() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x3d316e, roughness: 0.6 });
     const woodMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.5 });
@@ -4020,12 +4055,8 @@ class PepeloCoopGame {
     this.createPlatform(7, 0, -4, 6, 1, 8, groundMat);
     this.createPlatform(0, 0, -12, 10, 1, 8, groundMat);
 
-    const bridgeLeft = this.createMovableBridge(-4, 0, 0, 3, 0.4, 6, woodMat);
-    bridgeLeft.mesh.position.y = -4;
-
-    const bridgeRight = this.createMovableBridge(4, 0, 0, 3, 0.4, 6, woodMat);
-    bridgeRight.mesh.position.y = -4;
-
+    const bridgeLeft = this.createMovableBridge(-4, -4, 0, 3, 0.4, 6, woodMat);
+    const bridgeRight = this.createMovableBridge(4, -4, 0, 3, 0.4, 6, woodMat);
     const mainDoor = this.createSlidingDoor(0, 1.5, -8, 6, 3, 0.8, wallMat);
 
     this.createPressurePlate(3.5, 0.55, 6, 0x4d94ff, (p) => { bridgeLeft.targetY = p ? 0.3 : -4; });
@@ -4037,7 +4068,7 @@ class PepeloCoopGame {
     this.addFloatingClouds();
   }
 
-  // --- STAGE 2: The Ancient Elevator ---
+  // --- STAGE 2: Ancient Elevator (Vertical Co-Op) ---
   buildLevel2_AncientElevator() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x34295e, roughness: 0.6 });
     const liftMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.5, roughness: 0.3 });
@@ -4052,65 +4083,67 @@ class PepeloCoopGame {
 
     this.createPressurePlate(4, 0.55, 6, 0x4d94ff, (p) => { elevator.targetY = p ? 5.2 : 0.3; });
 
-    const ramp = this.createPlatform(4, 2.5, -1, 3, 0.4, 7, groundMat);
-    ramp.mesh.rotation.x = 0.5;
-    ramp.mesh.position.y = -5;
-    ramp.targetY = -5;
-
+    const ramp = this.createPlatform(4, -5, -1, 3, 0.4, 7, groundMat);
     this.createPressurePlate(-4, 5.55, -8, 0xff4d8d, (p) => { ramp.targetY = p ? 2.5 : -5; });
 
     this.createExitPortal(0, 6.2, -10);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 3: Stepping Stones ---
+  // --- STAGE 3: Precision Stepping Stones (Narrow Jumps) ---
   buildLevel3_SteppingStones() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x221a42, roughness: 0.6 });
     const stoneMat = new THREE.MeshStandardMaterial({ color: 0x06d6a0, metalness: 0.3, roughness: 0.4 });
 
-    this.createPlatform(0, 0, 8, 12, 1, 8, groundMat);
-    this.createPlatform(0, 0, -12, 12, 1, 8, groundMat);
+    this.createPlatform(0, 0, 8, 10, 1, 6, groundMat);
+    this.createPlatform(0, 0, -14, 10, 1, 6, groundMat);
 
-    // 3 Floating Stepping Stones that freeze when button is held
-    const s1 = this.createPlatform(-2.5, -4, 3, 2.5, 0.5, 2.5, stoneMat);
-    const s2 = this.createPlatform(2.5, -4, 0, 2.5, 0.5, 2.5, stoneMat);
-    const s3 = this.createPlatform(-1.5, -4, -4, 2.5, 0.5, 2.5, stoneMat);
+    // 4 Narrow Stepping Stones over void
+    const s1 = this.createPlatform(-2.5, -4, 4, 2.0, 0.4, 2.0, stoneMat);
+    const s2 = this.createPlatform(2.0, -4, 1, 2.0, 0.4, 2.0, stoneMat);
+    const s3 = this.createPlatform(-1.5, -4, -3, 2.0, 0.4, 2.0, stoneMat);
+    const s4 = this.createPlatform(2.0, -4, -7, 2.0, 0.4, 2.0, stoneMat);
 
+    // Plate 1 raises first 2 stones, Plate on Stone 2 raises Stones 3 & 4
     this.createPressurePlate(0, 0.55, 8, 0xffd166, (p) => {
       s1.targetY = p ? 0.3 : -4;
       s2.targetY = p ? 0.3 : -4;
-      s3.targetY = p ? 0.3 : -4;
     });
 
-    this.createCarryableCube(0, 1.5, 6, 0xff758f);
-    this.createPressurePlate(0, 0.55, -12, 0x06d6a0, (p) => {});
+    this.createPressurePlate(2.0, 0.55, 1, 0x4d94ff, (p) => {
+      s3.targetY = p ? 0.3 : -4;
+      s4.targetY = p ? 0.3 : -4;
+    });
+
+    this.createCarryableCube(0, 1.5, 8, 0xff758f);
+    this.createPressurePlate(0, 0.55, -14, 0x06d6a0, (p) => {});
 
     this.createExitPortal(0, 1.2, -14);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 4: The Double Gate ---
+  // --- STAGE 4: The Double Gate (Split Corridor & Cube Pass) ---
   buildLevel4_DoubleGate() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x2d1f4d, roughness: 0.6 });
     const wallMat = new THREE.MeshStandardMaterial({ color: 0x1f1933, roughness: 0.8 });
 
-    this.createPlatform(-4, 0, 0, 6, 1, 18, groundMat); // Queen corridor
-    this.createPlatform(4, 0, 0, 6, 1, 18, groundMat);  // King corridor
-    this.createPlatform(0, 0, 0, 1, 4, 18, wallMat);    // Middle divider wall
+    this.createPlatform(-4.5, 0, 0, 5, 1, 18, groundMat); // Juliet Corridor
+    this.createPlatform(4.5, 0, 0, 5, 1, 18, groundMat);  // Romeo Corridor
+    this.createPlatform(0, 2, 0, 1, 5, 18, wallMat);      // Dividing Wall
 
-    const doorQueen = this.createSlidingDoor(-4, 1.5, -2, 5, 3, 0.5, wallMat);
-    const doorKing = this.createSlidingDoor(4, 1.5, 2, 5, 3, 0.5, wallMat);
+    const doorQueen = this.createSlidingDoor(-4.5, 1.5, -2, 4.5, 3, 0.5, wallMat);
+    const doorKing = this.createSlidingDoor(4.5, 1.5, 2, 4.5, 3, 0.5, wallMat);
 
-    // Queen presses button to open King's door; King presses button to open Queen's door
-    this.createPressurePlate(-4, 0.55, 5, 0xff4d8d, (p) => { doorKing.targetY = p ? -3.5 : 1.5; });
-    this.createPressurePlate(4, 0.55, -5, 0x4d94ff, (p) => { doorQueen.targetY = p ? -3.5 : 1.5; });
+    this.createPressurePlate(-4.5, 0.55, 5, 0xff4d8d, (p) => { doorKing.targetY = p ? -3.5 : 1.5; });
+    this.createPressurePlate(4.5, 0.55, -5, 0x4d94ff, (p) => { doorQueen.targetY = p ? -3.5 : 1.5; });
 
-    this.createPlatform(0, 0, -12, 10, 1, 6, groundMat); // Joint portal platform
+    this.createCarryableCube(4.5, 1.5, 6, 0xffd166);
+    this.createPlatform(0, 0, -12, 12, 1, 6, groundMat);
     this.createExitPortal(0, 1.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 5: The Crystal Lift ---
+  // --- STAGE 5: Crystal Lifts (Alternating Counterweights) ---
   buildLevel5_CrystalLift() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a2a4f, roughness: 0.5 });
     const crystalMat = new THREE.MeshStandardMaterial({ color: 0x00f0ff, metalness: 0.6, roughness: 0.2 });
@@ -4118,9 +4151,8 @@ class PepeloCoopGame {
     this.createPlatform(0, 0, 8, 14, 1, 8, groundMat);
     this.createPlatform(0, 6, -10, 14, 1, 8, groundMat);
 
-    // Two lifts: standing on one raises the other
-    const liftA = this.createPlatform(-4, 0.3, -1, 3.5, 0.5, 3.5, crystalMat);
-    const liftB = this.createPlatform(4, 0.3, -1, 3.5, 0.5, 3.5, crystalMat);
+    const liftA = this.createPlatform(-4, 0.3, -1, 3.2, 0.5, 3.2, crystalMat);
+    const liftB = this.createPlatform(4, 0.3, -1, 3.2, 0.5, 3.2, crystalMat);
     this.elevators.push(liftA, liftB);
 
     this.createPressurePlate(-4, 0.55, 7, 0x00f0ff, (p) => { liftB.targetY = p ? 6.2 : 0.3; });
@@ -4130,333 +4162,443 @@ class PepeloCoopGame {
     this.addFloatingClouds();
   }
 
-  // --- STAGE 6: Heavy Lifting (Two Cubes) ---
-  buildLevel6_HeavyLifting() {
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x221a42, roughness: 0.6 });
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.5 });
+  // --- STAGE 6: Moving Platform Crossway (First Horizontal Moving Ferry) ---
+  buildLevel6_MovingCrossway() {
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x241d3b, roughness: 0.6 });
+    const ferryMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.6, roughness: 0.3 });
 
-    this.createPlatform(0, 0, 6, 16, 1, 8, groundMat);
-    this.createPlatform(0, 0, -10, 12, 1, 8, groundMat);
+    this.createPlatform(0, 0, 9, 12, 1, 6, groundMat);
+    this.createPlatform(0, 0, -11, 12, 1, 6, groundMat);
 
-    const bridge = this.createMovableBridge(0, -4, -2, 6, 0.4, 8, woodMat);
+    // Moving ferry oscillating along X axis
+    this.createMovingPlatform(0, 0.3, -1, 4.0, 0.4, 4.0, 'x', 6.0, 1.8, ferryMat);
 
-    this.createCarryableCube(-5, 1.5, 6, 0xffd166);
-    this.createCarryableCube(5, 1.5, 6, 0x06d6a0);
+    // Energy Cube must be ferried across to open portal gate
+    this.createCarryableCube(-3, 1.5, 9, 0xff4d8d);
 
-    let cubeAOnPlate = false;
-    let cubeBOnPlate = false;
+    const gate = this.createSlidingDoor(0, 1.5, -8, 6, 3, 0.5, groundMat);
+    this.createPressurePlate(0, 0.55, -11, 0x06d6a0, (p) => { gate.targetY = p ? -3.5 : 1.5; });
 
-    this.createPressurePlate(-3, 0.55, 6, 0xffd166, (p) => {
-      cubeAOnPlate = p;
-      bridge.targetY = (cubeAOnPlate && cubeBOnPlate) ? 0.3 : -4;
-    });
-
-    this.createPressurePlate(3, 0.55, 6, 0x06d6a0, (p) => {
-      cubeBOnPlate = p;
-      bridge.targetY = (cubeAOnPlate && cubeBOnPlate) ? 0.3 : -4;
-    });
-
-    this.createExitPortal(0, 1.2, -10);
+    this.createExitPortal(0, 1.2, -13);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 7: Color Resonance ---
+  // --- STAGE 7: Color Resonance (Pink & Blue Forcefield Barriers) ---
   buildLevel7_ColorResonance() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x2f1b40, roughness: 0.6 });
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1f1933, roughness: 0.8 });
 
-    this.createPlatform(0, 0, 8, 14, 1, 8, groundMat);
-    this.createPlatform(0, 0, -8, 14, 1, 8, groundMat);
+    this.createPlatform(0, 0, 9, 14, 1, 6, groundMat);
+    this.createPlatform(-5, 0, -2, 5, 1, 14, groundMat); // Juliet's Path
+    this.createPlatform(5, 0, -2, 5, 1, 14, groundMat);  // Romeo's Path
+    this.createPlatform(0, 0, -12, 12, 1, 6, groundMat);
 
-    const pinkGate = this.createSlidingDoor(-3, 1.5, 0, 4, 3, 0.5, wallMat);
-    const blueGate = this.createSlidingDoor(3, 1.5, 0, 4, 3, 0.5, wallMat);
+    // Pink Forcefield (Only Juliet can enter)
+    this.createColorBarrier(-5, 1.8, 3, 4.8, 3.5, 0.4, 'female');
+    // Blue Forcefield (Only Romeo can enter)
+    this.createColorBarrier(5, 1.8, 3, 4.8, 3.5, 0.4, 'male');
 
-    this.createPressurePlate(-4, 0.55, 8, 0xff4d8d, (p) => { pinkGate.targetY = p ? -3.5 : 1.5; });
-    this.createPressurePlate(4, 0.55, 8, 0x4d94ff, (p) => { blueGate.targetY = p ? -3.5 : 1.5; });
+    // Juliet hits switch inside pink path to drop Romeo's drawbridge
+    const bridgeRomeo = this.createMovableBridge(5, -4, -7, 4, 0.4, 4, groundMat);
+    this.createPressurePlate(-5, 0.55, -2, 0xff4d8d, (p) => { bridgeRomeo.targetY = p ? 0.3 : -4; });
 
-    this.createExitPortal(0, 1.2, -8);
+    // Romeo hits switch inside blue path to drop Juliet's drawbridge
+    const bridgeJuliet = this.createMovableBridge(-5, -4, -7, 4, 0.4, 4, groundMat);
+    this.createPressurePlate(5, 0.55, -2, 0x4d94ff, (p) => { bridgeJuliet.targetY = p ? 0.3 : -4; });
+
+    this.createExitPortal(0, 1.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 8: The Laser Grid ---
+  // --- STAGE 8: The Sweeping Laser Grid (Deadly Red Patrol Beam) ---
   buildLevel8_LaserGrid() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x192841, roughness: 0.6 });
-    const redMat = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0xff0055, emissiveIntensity: 0.8 });
 
-    this.createPlatform(0, 0, 8, 12, 1, 8, groundMat);
-    this.createPlatform(0, 0, -8, 12, 1, 8, groundMat);
+    this.createPlatform(0, 0, 9, 12, 1, 6, groundMat);
+    this.createPlatform(0, 0, 0, 5, 0.5, 10, groundMat); // Laser Catwalk
+    this.createPlatform(0, 0, -10, 12, 1, 6, groundMat);
 
-    const pathway = this.createPlatform(0, 0, 0, 4, 0.5, 8, groundMat);
+    // Deadly red laser beam patrolling along Z
+    const laser = this.createHazardLaser(0, 1.2, 0, 4.5, 'x', 'z', 3.5, 2.2);
 
-    // Glowing laser beam
-    const laserGeo = new THREE.CylinderGeometry(0.08, 0.08, 6, 8);
-    const laserMesh = new THREE.Mesh(laserGeo, redMat);
-    laserMesh.rotation.z = Math.PI / 2;
-    laserMesh.position.set(0, 1.2, 0);
-    this.scene.add(laserMesh);
-    this.levelObjects.push(laserMesh);
-
-    this.createPressurePlate(-3, 0.55, 8, 0x06d6a0, (p) => {
-      laserMesh.position.y = p ? -10 : 1.2; // Laser turns off!
+    // Timed Plate: Stepping on it cuts power to laser for 4 seconds!
+    this.createTimedPlate(-3, 0.55, 9, 0x06d6a0, 4.0, () => {
+      laser.mesh.position.y = -20;
+      laser.active = false;
+    }, () => {
+      laser.mesh.position.y = 1.2;
+      laser.active = true;
     });
 
-    this.createExitPortal(0, 1.2, -8);
+    this.createCarryableCube(3, 1.5, 9, 0xffd166);
+    this.createPressurePlate(0, 0.55, -10, 0xff4d8d, (p) => {});
+
+    this.createExitPortal(0, 1.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 9: The Rotating Gears ---
-  buildLevel9_RotatingGears() {
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x3d2817, roughness: 0.6 });
-    const gearMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.7, roughness: 0.3 });
+  // --- STAGE 9: Crumbling Ancient Steps (Vanishing Jump Tiles) ---
+  buildLevel9_CrumblingSteps() {
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x332211, roughness: 0.6 });
+    const crumbleMat = new THREE.MeshStandardMaterial({ color: 0xcc8855, roughness: 0.4 });
 
-    this.createPlatform(0, 0, 8, 12, 1, 8, groundMat);
-    this.createPlatform(0, 0, -10, 12, 1, 8, groundMat);
+    this.createPlatform(0, 0, 9, 10, 1, 6, groundMat);
+    this.createPlatform(0, 0, -13, 10, 1, 6, groundMat);
 
-    const gearA = this.createPlatform(-2.5, 0.3, 0, 4, 0.4, 4, gearMat);
-    const gearB = this.createPlatform(2.5, 0.3, -4, 4, 0.4, 4, gearMat);
+    // 5 Crumbling stepping stones
+    const c1 = this.createCrumblingPlatform(0, 0.2, 5, 2.5, 0.4, 2.2, crumbleMat);
+    const c2 = this.createCrumblingPlatform(-2.5, 0.2, 1.5, 2.5, 0.4, 2.2, crumbleMat);
+    const c3 = this.createCrumblingPlatform(2.5, 0.2, -2, 2.5, 0.4, 2.2, crumbleMat);
+    const c4 = this.createCrumblingPlatform(-1.5, 0.2, -5.5, 2.5, 0.4, 2.2, crumbleMat);
+    const c5 = this.createCrumblingPlatform(1.5, 0.2, -9, 2.5, 0.4, 2.2, crumbleMat);
 
-    this.createPressurePlate(0, 0.55, 8, 0xffd166, (p) => {});
-    this.createExitPortal(0, 1.2, -10);
+    // Solid bridge lock on the other side
+    const solidBridge = this.createMovableBridge(0, -6, -2, 4, 0.4, 14, groundMat);
+    this.createPressurePlate(0, 0.55, -13, 0xffd166, (p) => {
+      solidBridge.targetY = p ? 0.3 : -6;
+    });
+
+    this.createExitPortal(0, 1.2, -15);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 10: The Seesaw Bridge ---
+  // --- STAGE 10: Dynamic Seesaw Bridge (Weight Balance & Counter-Cube) ---
   buildLevel10_SeesawBridge() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x251c38, roughness: 0.6 });
     const woodMat = new THREE.MeshStandardMaterial({ color: 0xb5835a, roughness: 0.4 });
 
-    this.createPlatform(0, 0, 8, 12, 1, 8, groundMat);
-    this.createPlatform(0, 0, -10, 12, 1, 8, groundMat);
+    this.createPlatform(0, 0, 9, 12, 1, 6, groundMat);
+    this.createPlatform(0, 2, -12, 10, 1, 6, groundMat); // Higher ledge
 
-    // Balanced tilting beam
-    const seesaw = this.createPlatform(0, 0.3, -1, 5, 0.4, 10, woodMat);
+    // Giant 13-unit seesaw platform
+    const seesaw = this.createPlatform(0, 0.3, -1, 4.5, 0.4, 13, woodMat);
 
-    this.createCarryableCube(0, 1.5, 6, 0xff4d8d);
-    this.createExitPortal(0, 1.2, -10);
+    // Heavy Counter-Cube needed at the far end to weigh the bridge up to the ledge
+    this.createCarryableCube(0, 1.5, 8, 0xff4d8d);
+
+    // Balance plate: when weighted, raises far end
+    this.createPressurePlate(0, 0.55, 4, 0xffd166, (p) => {
+      seesaw.targetY = p ? 1.0 : 0.3;
+    });
+
+    this.createExitPortal(0, 3.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 11: Synchronized Sprint (Dual Timed Plates) ---
-  buildLevel11_SynchronizedSprint() {
+  // --- STAGE 11: The Timed Sprint (Tick-Tock Pressure) ---
+  buildLevel11_TimedSprint() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x1f2440, roughness: 0.6 });
     const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.6, roughness: 0.3 });
 
-    this.createPlatform(-7, 0, 0, 6, 1, 16, groundMat);
-    this.createPlatform(7, 0, 0, 6, 1, 16, groundMat);
-    this.createPlatform(0, 0, -12, 10, 1, 8, goldMat);
+    this.createPlatform(-7, 0, 0, 5, 1, 16, groundMat); // Juliet side
+    this.createPlatform(7, 0, 0, 5, 1, 16, groundMat);  // Romeo side
+    this.createPlatform(0, 0, -12, 10, 1, 6, goldMat);
 
-    const bridge = this.createMovableBridge(0, -5, -4, 8, 0.4, 8, goldMat);
+    const timedBridge = this.createMovableBridge(0, -6, -3, 8, 0.4, 8, goldMat);
 
-    let p1 = false, p2 = false;
-    this.createPressurePlate(-7, 0.55, 6, 0xff4d8d, (pressed) => {
-      p1 = pressed;
-      if (p1 && p2) bridge.targetY = 0.3;
-      else bridge.targetY = -5;
+    // Timed Plate gives 6 seconds before retracting
+    this.createTimedPlate(-7, 0.55, 5, 0xff4d8d, 6.0, () => {
+      timedBridge.targetY = 0.3;
+    }, () => {
+      timedBridge.targetY = -6;
     });
 
-    this.createPressurePlate(7, 0.55, 6, 0x4d94ff, (pressed) => {
-      p2 = pressed;
-      if (p1 && p2) bridge.targetY = 0.3;
-      else bridge.targetY = -5;
+    // Permanent lock switch on Romeo's side
+    this.createPressurePlate(7, 0.55, -4, 0x4d94ff, (p) => {
+      if (p) timedBridge.targetY = 0.3;
     });
 
     this.createExitPortal(0, 1.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 12: The Conveyor Maze ---
-  buildLevel12_ConveyorMaze() {
+  // --- STAGE 12: Conveyor & Laser Maze (Dual Moving Ferries + Sweeping Laser) ---
+  buildLevel12_ConveyorLaserMaze() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x1b2838, roughness: 0.6 });
     const blueMat = new THREE.MeshStandardMaterial({ color: 0x2679ff, roughness: 0.4 });
 
-    this.createPlatform(0, 0, 8, 12, 1, 8, groundMat);
-    this.createPlatform(0, 0, -10, 12, 1, 8, groundMat);
+    this.createPlatform(0, 0, 9, 12, 1, 6, groundMat);
+    this.createPlatform(0, 0, -12, 12, 1, 6, groundMat);
 
-    const platform = this.createPlatform(0, 0.3, -1, 4, 0.4, 8, blueMat);
+    // Two moving platforms traveling in opposite directions
+    this.createMovingPlatform(-3.5, 0.3, -1.5, 3.5, 0.4, 3.5, 'z', 4.0, 1.8, blueMat);
+    this.createMovingPlatform(3.5, 0.3, -1.5, 3.5, 0.4, 3.5, 'z', -4.0, 1.8, blueMat);
 
-    this.createPressurePlate(0, 0.55, 8, 0x06d6a0, (p) => {
-      platform.targetY = p ? 0.3 : -4;
+    // Laser sweeping across center gap
+    const laser = this.createHazardLaser(0, 1.2, -1.5, 8.0, 'x', 'x', 2.5, 2.0);
+
+    // Deactivation plate
+    this.createPressurePlate(0, 0.55, 9, 0x06d6a0, (p) => {
+      laser.mesh.position.y = p ? -20 : 1.2;
+      laser.active = !p;
     });
 
-    this.createExitPortal(0, 1.2, -10);
+    this.createExitPortal(0, 1.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 13: Starry Crossway ---
-  buildLevel13_StarryCrossway() {
+  // --- STAGE 13: Dual Energy Matrix Relay (Two Moving Gondolas + 2 Cubes) ---
+  buildLevel13_DualEnergyRelay() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x221338, roughness: 0.5 });
     const starMat = new THREE.MeshStandardMaterial({ color: 0x9d4edd, metalness: 0.5, roughness: 0.3 });
 
-    this.createPlatform(0, 0, 8, 12, 1, 8, groundMat);
-    this.createPlatform(-6, 0, -4, 6, 1, 6, groundMat);
-    this.createPlatform(6, 0, -4, 6, 1, 6, groundMat);
-    this.createPlatform(0, 0, -12, 10, 1, 8, starMat);
+    this.createPlatform(0, 0, 9, 14, 1, 6, groundMat);
+    this.createPlatform(-7, 0, -5, 5, 1, 6, groundMat); // Pink Island
+    this.createPlatform(7, 0, -5, 5, 1, 6, groundMat);  // Blue Island
+    this.createPlatform(0, 0, -14, 12, 1, 6, starMat);  // Portal Summit
 
-    const bridgeA = this.createMovableBridge(-3, -4, 2, 4, 0.4, 6, starMat);
-    const bridgeB = this.createMovableBridge(3, -4, 2, 4, 0.4, 6, starMat);
+    // Gondolas
+    this.createMovingPlatform(-4, 0.3, 2, 3.2, 0.4, 3.2, 'z', 4.0, 1.5, starMat);
+    this.createMovingPlatform(4, 0.3, 2, 3.2, 0.4, 3.2, 'z', 4.0, 1.5, starMat);
 
-    this.createPressurePlate(3, 0.55, 8, 0xff4d8d, (p) => { bridgeA.targetY = p ? 0.3 : -4; });
-    this.createPressurePlate(-3, 0.55, 8, 0x4d94ff, (p) => { bridgeB.targetY = p ? 0.3 : -4; });
+    // 2 Cubes on the islands
+    this.createCarryableCube(-7, 1.5, -5, 0xff4d8d);
+    this.createCarryableCube(7, 1.5, -5, 0x4d94ff);
 
-    this.createExitPortal(0, 1.2, -12);
+    // Dual Matrix Plates: Both must be weighted to lower portal drawbridge
+    const bridge = this.createMovableBridge(0, -6, -9, 6, 0.4, 6, starMat);
+    let p1 = false, p2 = false;
+
+    this.createPressurePlate(-3, 0.55, 9, 0xff4d8d, (p) => {
+      p1 = p;
+      bridge.targetY = (p1 && p2) ? 0.3 : -6;
+    });
+
+    this.createPressurePlate(3, 0.55, 9, 0x4d94ff, (p) => {
+      p2 = p;
+      bridge.targetY = (p1 && p2) ? 0.3 : -6;
+    });
+
+    this.createExitPortal(0, 1.2, -14);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 14: The Skyward Bouncers ---
+  // --- STAGE 14: Skyward Bouncers (High Altitude & Crumbling Ascents) ---
   buildLevel14_SkywardBouncers() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x1f1633, roughness: 0.6 });
     const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd166, roughness: 0.3 });
+    const crumbleMat = new THREE.MeshStandardMaterial({ color: 0xcc8855, roughness: 0.4 });
 
-    this.createPlatform(0, 0, 6, 14, 1, 10, groundMat);
-    this.createPlatform(0, 6, -8, 14, 1, 10, goldMat);
+    this.createPlatform(0, 0, 9, 12, 1, 6, groundMat);
+    this.createPlatform(0, 6, -3, 10, 1, 6, groundMat);   // Tier 2
+    this.createPlatform(0, 12, -13, 12, 1, 6, goldMat);  // Tier 3 Summit
 
-    const lift = this.createPlatform(0, 0.3, -1, 4, 0.4, 4, goldMat);
-    this.elevators.push(lift);
+    // Lift 1 (0 -> 6)
+    const lift1 = this.createPlatform(-4, 0.3, 3, 3.2, 0.4, 3.2, goldMat);
+    this.elevators.push(lift1);
+    this.createPressurePlate(3, 0.55, 9, 0x4d94ff, (p) => { lift1.targetY = p ? 6.2 : 0.3; });
 
-    this.createPressurePlate(0, 0.55, 7, 0xffd166, (p) => { lift.targetY = p ? 6.2 : 0.3; });
-    this.createExitPortal(0, 7.2, -8);
+    // Crumbling connecting stones on Tier 2
+    this.createCrumblingPlatform(-2.5, 6.2, -8, 2.2, 0.4, 2.2, crumbleMat);
+    this.createCrumblingPlatform(2.5, 6.2, -8, 2.2, 0.4, 2.2, crumbleMat);
+
+    // Lift 2 (6 -> 12)
+    const lift2 = this.createPlatform(4, 6.3, -3, 3.2, 0.4, 3.2, goldMat);
+    this.elevators.push(lift2);
+    this.createPressurePlate(-3, 6.55, -3, 0xff4d8d, (p) => { lift2.targetY = p ? 12.2 : 6.3; });
+
+    this.createExitPortal(0, 13.2, -13);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 15: Cube Domino ---
-  buildLevel15_CubeDomino() {
+  // --- STAGE 15: Domino Cascade (3-Chain Logic Puzzle) ---
+  buildLevel15_DominoCascade() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x2b1c40, roughness: 0.6 });
-    const bridgeMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.7, roughness: 0.3 });
+    const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.6, roughness: 0.3 });
 
-    this.createPlatform(0, 0, 8, 16, 1, 8, groundMat);
-    this.createPlatform(0, 0, -12, 12, 1, 8, groundMat);
+    this.createPlatform(0, 0, 9, 16, 1, 6, groundMat);
+    this.createPlatform(0, 4, 0, 10, 1, 6, groundMat);    // Middle Ledge
+    this.createPlatform(0, 0, -12, 12, 1, 6, groundMat);
 
-    const bridge = this.createMovableBridge(0, -5, -2, 6, 0.4, 10, bridgeMat);
+    // Cube 1 on Ground
+    this.createCarryableCube(-6, 1.5, 9, 0xff4d8d);
 
-    this.createCarryableCube(-5, 1.5, 8, 0xff4d8d);
-    this.createCarryableCube(5, 1.5, 8, 0x4d94ff);
+    // Lift to Middle Ledge
+    const lift = this.createPlatform(0, 0.3, 4.5, 3.2, 0.4, 3.2, goldMat);
+    this.elevators.push(lift);
+    this.createPressurePlate(-3, 0.55, 9, 0xff4d8d, (p) => { lift.targetY = p ? 4.2 : 0.3; });
 
-    let p1 = false, p2 = false;
-    this.createPressurePlate(-2.5, 0.55, 8, 0xff4d8d, (p) => {
-      p1 = p;
-      bridge.targetY = (p1 && p2) ? 0.3 : -5;
-    });
+    // Cube 2 on Middle Ledge
+    this.createCarryableCube(0, 5.5, 0, 0x4d94ff);
 
-    this.createPressurePlate(2.5, 0.55, 8, 0x4d94ff, (p) => {
-      p2 = p;
-      bridge.targetY = (p1 && p2) ? 0.3 : -5;
-    });
+    // Bridge to Exit requires Cube 2 on Middle Plate
+    const bridge = this.createMovableBridge(0, -6, -6, 6, 0.4, 6, goldMat);
+    this.createPressurePlate(3, 4.55, 0, 0x4d94ff, (p) => { bridge.targetY = p ? 0.3 : -6; });
 
     this.createExitPortal(0, 1.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 16: The Mirror Chamber ---
+  // --- STAGE 16: Mirror Chamber (Simultaneous Sync Gauntlet + Lasers) ---
   buildLevel16_MirrorChamber() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x1b2848, roughness: 0.5 });
-    const mirrorMat = new THREE.MeshStandardMaterial({ color: 0x06d6a0, metalness: 0.6, roughness: 0.2 });
+    const glassWall = new THREE.MeshStandardMaterial({ color: 0x06d6a0, transparent: true, opacity: 0.35 });
 
-    this.createPlatform(-6, 0, 0, 7, 1, 16, groundMat);
-    this.createPlatform(6, 0, 0, 7, 1, 16, groundMat);
-    this.createPlatform(0, 0, -12, 10, 1, 8, mirrorMat);
+    this.createPlatform(-6, 0, 0, 6, 1, 18, groundMat); // Juliet's Mirror
+    this.createPlatform(6, 0, 0, 6, 1, 18, groundMat);  // Romeo's Mirror
+    this.createPlatform(0, 2, 0, 0.5, 5, 18, glassWall); // Translucent Center Mirror
 
-    const bridge = this.createMovableBridge(0, -5, -4, 6, 0.4, 8, mirrorMat);
+    // Symmetrical Sweeping Lasers on both sides
+    this.createHazardLaser(-6, 1.2, 2, 4.0, 'x', 'z', 3.0, 2.0);
+    this.createHazardLaser(6, 1.2, 2, 4.0, 'x', 'z', 3.0, 2.0);
 
-    let m1 = false, m2 = false;
-    this.createPressurePlate(-6, 0.55, 0, 0x06d6a0, (p) => {
-      m1 = p;
-      bridge.targetY = (m1 && m2) ? 0.3 : -5;
+    // Symmetrical Moving Platforms
+    this.createMovingPlatform(-6, 0.3, -4, 3.2, 0.4, 3.2, 'x', 2.0, 2.0, groundMat);
+    this.createMovingPlatform(6, 0.3, -4, 3.2, 0.4, 3.2, 'x', -2.0, 2.0, groundMat);
+
+    // Dual Sync Plates: Both must be pressed within 1.5s
+    this.createPlatform(0, 0, -13, 10, 1, 6, groundMat);
+    const endGate = this.createSlidingDoor(0, 1.5, -9, 8, 3, 0.5, groundMat);
+
+    let leftDone = false, rightDone = false;
+    this.createPressurePlate(-6, 0.55, -8, 0x06d6a0, (p) => {
+      leftDone = p;
+      if (leftDone && rightDone) endGate.targetY = -3.5;
     });
 
-    this.createPressurePlate(6, 0.55, 0, 0x06d6a0, (p) => {
-      m2 = p;
-      bridge.targetY = (m1 && m2) ? 0.3 : -5;
+    this.createPressurePlate(6, 0.55, -8, 0x06d6a0, (p) => {
+      rightDone = p;
+      if (leftDone && rightDone) endGate.targetY = -3.5;
     });
 
-    this.createExitPortal(0, 1.2, -12);
+    this.createExitPortal(0, 1.2, -13);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 17: The Cloud Spire ---
-  buildLevel17_CloudSpire() {
+  // --- STAGE 17: Cloud Spire Tower (4-Tier Vertical Ascent) ---
+  buildLevel17_CloudSpireTower() {
     const groundMat = new THREE.MeshStandardMaterial({ color: 0x251c38, roughness: 0.6 });
     const spireMat = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.7, roughness: 0.3 });
+    const crumbleMat = new THREE.MeshStandardMaterial({ color: 0xcc8855, roughness: 0.4 });
 
-    this.createPlatform(0, 0, 8, 14, 1, 8, groundMat);
-    this.createPlatform(0, 4, 0, 12, 1, 6, groundMat);
-    this.createPlatform(0, 8, -8, 12, 1, 8, spireMat);
+    this.createPlatform(0, 0, 9, 14, 1, 6, groundMat);   // Tier 0 (Ground)
+    this.createPlatform(0, 5, 0, 12, 1, 6, groundMat);   // Tier 1 (Mid)
+    this.createPlatform(0, 10, -8, 10, 1, 6, groundMat); // Tier 2 (High)
+    this.createPlatform(0, 15, -16, 12, 1, 6, spireMat); // Tier 3 (Summit)
 
-    const lift1 = this.createPlatform(-4, 0.3, 4, 3, 0.4, 3, spireMat);
-    const lift2 = this.createPlatform(4, 4.3, -4, 3, 0.4, 3, spireMat);
-    this.elevators.push(lift1, lift2);
+    // Lift 0 -> 1
+    const lift1 = this.createPlatform(-4, 0.3, 4.5, 3.2, 0.4, 3.2, spireMat);
+    this.elevators.push(lift1);
+    this.createPressurePlate(4, 0.55, 9, 0x4d94ff, (p) => { lift1.targetY = p ? 5.2 : 0.3; });
 
-    this.createPressurePlate(4, 0.55, 8, 0x4d94ff, (p) => { lift1.targetY = p ? 4.2 : 0.3; });
-    this.createPressurePlate(-3, 4.55, 0, 0xff4d8d, (p) => { lift2.targetY = p ? 8.2 : 4.3; });
+    // Sweeping laser on Tier 1
+    this.createHazardLaser(0, 6.2, 0, 8.0, 'x', 'z', 2.0, 2.5);
 
-    this.createExitPortal(0, 9.2, -8);
+    // Crumbling bridge connecting Tier 1 to Lift 2
+    this.createCrumblingPlatform(3, 5.2, -4, 2.2, 0.4, 2.2, crumbleMat);
+
+    // Lift 1 -> 2
+    const lift2 = this.createPlatform(4, 5.3, -4, 3.2, 0.4, 3.2, spireMat);
+    this.elevators.push(lift2);
+    this.createPressurePlate(-3, 5.55, 0, 0xff4d8d, (p) => { lift2.targetY = p ? 10.2 : 5.3; });
+
+    // Lift 2 -> 3
+    const lift3 = this.createPlatform(0, 10.3, -12, 3.2, 0.4, 3.2, spireMat);
+    this.elevators.push(lift3);
+    this.createPressurePlate(0, 10.55, -8, 0x06d6a0, (p) => { lift3.targetY = p ? 15.2 : 10.3; });
+
+    this.createExitPortal(0, 16.2, -16);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 18: Dual Laser Gauntlet ---
+  // --- STAGE 18: Dual Laser Gauntlet (Narrow Catwalks + 3 Lasers) ---
   buildLevel18_DualLaserGauntlet() {
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x1f1330, roughness: 0.6 });
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x120a1f, roughness: 0.8 });
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x1a1228, roughness: 0.6 });
 
-    this.createPlatform(0, 0, 8, 14, 1, 8, groundMat);
-    this.createPlatform(0, 0, -8, 14, 1, 8, groundMat);
+    this.createPlatform(0, 0, 10, 12, 1, 6, groundMat);
+    this.createPlatform(-3, 0, 0, 2.5, 0.4, 14, groundMat); // Juliet narrow beam
+    this.createPlatform(3, 0, 0, 2.5, 0.4, 14, groundMat);  // Romeo narrow beam
+    this.createPlatform(0, 0, -12, 12, 1, 6, groundMat);
 
-    const gate1 = this.createSlidingDoor(-3, 1.5, 0, 4, 3, 0.5, wallMat);
-    const gate2 = this.createSlidingDoor(3, 1.5, 0, 4, 3, 0.5, wallMat);
+    // 3 Independent lasers patrolling at different speeds
+    this.createHazardLaser(0, 1.2, 4, 10.0, 'x', 'z', 2.0, 1.8);
+    this.createHazardLaser(0, 1.2, 0, 10.0, 'x', 'z', 2.0, 2.8);
+    this.createHazardLaser(0, 1.2, -4, 10.0, 'x', 'z', 2.0, 2.2);
 
-    this.createPressurePlate(-4, 0.55, 8, 0xff4d8d, (p) => { gate2.targetY = p ? -3.5 : 1.5; });
-    this.createPressurePlate(4, 0.55, 8, 0x4d94ff, (p) => { gate1.targetY = p ? -3.5 : 1.5; });
-
-    this.createExitPortal(0, 1.2, -8);
-    this.addFloatingClouds();
-  }
-
-  // --- STAGE 19: The Trial of Trust ---
-  buildLevel19_TrialOfTrust() {
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x161329, roughness: 0.6 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0xff85b3, transparent: true, opacity: 0.4, roughness: 0.1 });
-
-    this.createPlatform(0, 0, 8, 12, 1, 8, groundMat);
-    this.createPlatform(0, 0, -12, 12, 1, 8, groundMat);
-
-    const bridge = this.createMovableBridge(0, -6, -2, 5, 0.4, 10, glassMat);
-
-    this.createPressurePlate(0, 0.55, 8, 0xff4d8d, (p) => {
-      bridge.targetY = p ? 0.3 : -6;
-      bridge.mesh.material.opacity = p ? 0.85 : 0.1;
-    });
+    // Timed shield buttons grant 5s windows
+    this.createTimedPlate(-4, 0.55, 10, 0xff4d8d, 5.0, () => {}, () => {});
+    this.createTimedPlate(4, 0.55, 10, 0x4d94ff, 5.0, () => {}, () => {});
 
     this.createExitPortal(0, 1.2, -12);
     this.addFloatingClouds();
   }
 
-  // --- STAGE 20: The Eternal Sanctuary (GRAND FINALE!) ---
+  // --- STAGE 19: The Trial of Trust (Asymmetrical Invisible Bridges) ---
+  buildLevel19_TrialOfTrust() {
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x161329, roughness: 0.6 });
+    const glassMat = new THREE.MeshStandardMaterial({ color: 0xff85b3, transparent: true, opacity: 0.2, roughness: 0.1 });
+
+    this.createPlatform(-6, 0, 8, 6, 1, 6, groundMat);
+    this.createPlatform(6, 0, 8, 6, 1, 6, groundMat);
+    this.createPlatform(0, 0, -14, 12, 1, 6, groundMat);
+
+    // Juliet's bridge: Manifests ONLY when Romeo stands on Blue Altar
+    const bridgeJuliet = this.createMovableBridge(-6, -6, -3, 3.5, 0.4, 16, glassMat);
+    this.createPressurePlate(6, 0.55, 8, 0x4d94ff, (p) => {
+      bridgeJuliet.targetY = p ? 0.3 : -6;
+      bridgeJuliet.mesh.material.opacity = p ? 0.9 : 0.1;
+    });
+
+    // Romeo's bridge: Manifests ONLY when Juliet stands on Pink Altar
+    const bridgeRomeo = this.createMovableBridge(6, -6, -3, 3.5, 0.4, 16, glassMat);
+    this.createPressurePlate(-6, 0.55, 8, 0xff4d8d, (p) => {
+      bridgeRomeo.targetY = p ? 0.3 : -6;
+      bridgeRomeo.mesh.material.opacity = p ? 0.9 : 0.1;
+    });
+
+    this.createExitPortal(0, 1.2, -14);
+    this.addFloatingClouds();
+  }
+
+  // --- STAGE 20: The Eternal Sanctuary (GRAND FINALE: 3-Phase Climax) ---
   buildLevel20_EternalSanctuary() {
-    const groundMat = new THREE.MeshStandardMaterial({ color: 0x2b153b, roughness: 0.5 });
+    const groundMat = new THREE.MeshStandardMaterial({ color: 0x241133, roughness: 0.5 });
     const royalGold = new THREE.MeshStandardMaterial({ color: 0xffd166, metalness: 0.8, roughness: 0.2 });
-    const roseGold = new THREE.MeshStandardMaterial({ color: 0xff758f, metalness: 0.6, roughness: 0.3 });
+    const roseGold = new THREE.MeshStandardMaterial({ color: 0xff758f, metalness: 0.7, roughness: 0.3 });
 
-    // Grand Floating Heart Sanctuary
-    this.createPlatform(0, 0, 8, 16, 1, 8, groundMat);
-    this.createPlatform(0, 4, -8, 16, 1, 10, royalGold);
+    // Phase 1: Entry Plaza
+    this.createPlatform(0, 0, 10, 16, 1, 6, groundMat);
 
-    const grandBridge = this.createMovableBridge(0, -6, 0, 6, 0.5, 8, roseGold);
+    // Phase 1: Dual Orbital Moving Ferries over cosmic abyss
+    this.createMovingPlatform(-4.5, 0.3, 3, 3.8, 0.4, 3.8, 'x', 3.5, 1.8, roseGold);
+    this.createMovingPlatform(4.5, 0.3, 3, 3.8, 0.4, 3.8, 'x', -3.5, 1.8, royalGold);
 
-    this.createCarryableCube(-5, 1.5, 8, 0xffd166);
-    this.createCarryableCube(5, 1.5, 8, 0xff4d8d);
+    // Phase 1: Sweeping Cosmic Lasers
+    this.createHazardLaser(0, 1.2, 3, 12.0, 'x', 'z', 2.0, 2.0);
 
-    let pA = false, pB = false;
-    this.createPressurePlate(-4, 0.55, 8, 0xff4d8d, (p) => {
-      pA = p;
-      grandBridge.targetY = (pA && pB) ? 2.0 : -6;
+    // Phase 2: Middle Sanctum (Y: 5)
+    this.createPlatform(0, 5, -4, 14, 1, 6, groundMat);
+
+    // Two Sacred Soul Cubes
+    this.createCarryableCube(-5, 6.5, -4, 0xff4d8d); // Juliet's Heart
+    this.createCarryableCube(5, 6.5, -4, 0x4d94ff);  // Romeo's Heart
+
+    // Phase 2: Dual Ascending Lifts (5 -> 10)
+    const liftLeft = this.createPlatform(-4.5, 5.3, -9, 3.5, 0.4, 3.5, roseGold);
+    const liftRight = this.createPlatform(4.5, 5.3, -9, 3.5, 0.4, 3.5, royalGold);
+    this.elevators.push(liftLeft, liftRight);
+
+    this.createPressurePlate(-2, 5.55, -4, 0xff4d8d, (p) => { liftRight.targetY = p ? 10.2 : 5.3; });
+    this.createPressurePlate(2, 5.55, -4, 0x4d94ff, (p) => { liftLeft.targetY = p ? 10.2 : 5.3; });
+
+    // Phase 3: The Golden Summit (Y: 10)
+    this.createPlatform(0, 10, -16, 18, 1, 8, royalGold);
+
+    // Twin Heart Altar Sockets for the Cubes
+    let c1Done = false, c2Done = false;
+    const finalBridge = this.createMovableBridge(0, 4, -12, 6, 0.5, 6, roseGold);
+
+    this.createPressurePlate(-4.5, 10.55, -16, 0xff4d8d, (p) => {
+      c1Done = p;
+      finalBridge.targetY = (c1Done && c2Done) ? 10.2 : 4;
     });
 
-    this.createPressurePlate(4, 0.55, 8, 0x4d94ff, (p) => {
-      pB = p;
-      grandBridge.targetY = (pA && pB) ? 2.0 : -6;
+    this.createPressurePlate(4.5, 10.55, -16, 0x4d94ff, (p) => {
+      c2Done = p;
+      finalBridge.targetY = (c1Done && c2Done) ? 10.2 : 4;
     });
 
-    // Grand Crowned Heart Vortex (Giant Scale 3.2!)
-    this.createExitPortal(0, 5.5, -8, 3.2);
+    // Grand Crowned Heart Vortex (Scale 3.5!)
+    this.createExitPortal(0, 12.0, -16, 3.5);
     this.addFloatingClouds();
   }
 
@@ -4471,9 +4613,36 @@ class PepeloCoopGame {
     this.scene.add(mesh);
     this.levelObjects.push(mesh);
 
-    const platform = { mesh, w, h, d, targetY: y };
+    const platform = { mesh, w, h, d, targetY: y, deltaX: 0, deltaY: 0, deltaZ: 0 };
     this.platforms.push(platform);
     return platform;
+  }
+
+  createMovingPlatform(x, y, z, w, h, d, axis, range, speed, material) {
+    const plat = this.createPlatform(x, y, z, w, h, d, material);
+    plat.isMoving = true;
+    plat.axis = axis; // 'x' or 'z' or 'y'
+    plat.range = range;
+    plat.speed = speed;
+    plat.baseX = x;
+    plat.baseY = y;
+    plat.baseZ = z;
+    plat.timeOffset = Math.random() * Math.PI * 2;
+    this.movingPlatforms.push(plat);
+    return plat;
+  }
+
+  createCrumblingPlatform(x, y, z, w, h, d, material) {
+    const plat = this.createPlatform(x, y, z, w, h, d, material);
+    plat.isCrumbling = true;
+    plat.crumbleState = 'idle'; // 'idle', 'shaking', 'falling'
+    plat.shakeTime = 0;
+    plat.fallTime = 0;
+    plat.baseX = x;
+    plat.baseY = y;
+    plat.baseZ = z;
+    this.crumblingPlatforms.push(plat);
+    return plat;
   }
 
   createMovableBridge(x, y, z, w, h, d, material) {
@@ -4494,6 +4663,90 @@ class PepeloCoopGame {
     const door = { mesh, targetY: y, initialY: y };
     this.doors.push(door);
     return door;
+  }
+
+  createHazardLaser(x, y, z, length, orientAxis = 'x', patrolAxis = null, patrolRange = 0, patrolSpeed = 2) {
+    const redMat = new THREE.MeshStandardMaterial({
+      color: 0xff0055,
+      emissive: 0xff0044,
+      emissiveIntensity: 1.5,
+      roughness: 0.2
+    });
+
+    const geo = new THREE.CylinderGeometry(0.12, 0.12, length, 12);
+    const mesh = new THREE.Mesh(geo, redMat);
+    mesh.position.set(x, y, z);
+    if (orientAxis === 'x') {
+      mesh.rotation.z = Math.PI / 2;
+    } else if (orientAxis === 'z') {
+      mesh.rotation.x = Math.PI / 2;
+    }
+    this.scene.add(mesh);
+    this.levelObjects.push(mesh);
+
+    // Emitters
+    const emitterGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
+    const emitterMat = new THREE.MeshStandardMaterial({ color: 0x1f1933, roughness: 0.8 });
+    const e1 = new THREE.Mesh(emitterGeo, emitterMat);
+    const e2 = new THREE.Mesh(emitterGeo, emitterMat);
+    if (orientAxis === 'x') {
+      e1.position.set(x - length / 2, y, z);
+      e2.position.set(x + length / 2, y, z);
+    } else {
+      e1.position.set(x, y, z - length / 2);
+      e2.position.set(x, y, z + length / 2);
+    }
+    this.scene.add(e1, e2);
+    this.levelObjects.push(e1, e2);
+
+    const hazard = {
+      mesh, e1, e2,
+      length, orientAxis,
+      patrolAxis, patrolRange, patrolSpeed,
+      baseX: x, baseY: y, baseZ: z,
+      active: true,
+      timeOffset: Math.random() * Math.PI
+    };
+    this.hazards.push(hazard);
+    return hazard;
+  }
+
+  createTimedPlate(x, y, z, color, durationSec, onActivate, onExpire) {
+    const plate = this.createPressurePlate(x, y, z, color, (isPressed) => {
+      if (isPressed && !plate.timerActive) {
+        plate.timerActive = true;
+        plate.timeLeft = durationSec;
+        window.soundFx.playSuccess();
+        if (onActivate) onActivate();
+      }
+    });
+    plate.durationSec = durationSec;
+    plate.timerActive = false;
+    plate.timeLeft = 0;
+    plate.onExpire = onExpire;
+    this.timedPlates.push(plate);
+    return plate;
+  }
+
+  createColorBarrier(x, y, z, w, h, d, allowedRole) {
+    const color = (allowedRole === 'female') ? 0xff4d8d : 0x4d94ff;
+    const mat = new THREE.MeshStandardMaterial({
+      color: color,
+      emissive: color,
+      emissiveIntensity: 0.6,
+      transparent: true,
+      opacity: 0.45,
+      roughness: 0.2
+    });
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+    this.levelObjects.push(mesh);
+
+    const barrier = { mesh, w, h, d, allowedRole, color };
+    this.colorBarriers.push(barrier);
+    return barrier;
   }
 
   createPressurePlate(x, y, z, color, onToggle) {
@@ -4533,7 +4786,7 @@ class PepeloCoopGame {
       color: color,
       roughness: 0.3,
       emissive: color,
-      emissiveIntensity: 0.25
+      emissiveIntensity: 0.35
     });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.position.set(x, y, z);
@@ -4546,7 +4799,7 @@ class PepeloCoopGame {
       mesh,
       isCarried: false,
       carrier: null,
-      id: 'cube_' + Math.floor(Math.random() * 1000)
+      id: 'cube_' + Math.floor(Math.random() * 10000)
     };
     this.interactiveCubes.push(cube);
     return cube;
@@ -4560,7 +4813,7 @@ class PepeloCoopGame {
     const ringMat = new THREE.MeshStandardMaterial({
       color: 0xffd166,
       emissive: 0xff9e00,
-      emissiveIntensity: 0.8,
+      emissiveIntensity: 0.9,
       metalness: 0.7
     });
     const ring1 = new THREE.Mesh(ringGeo, ringMat);
@@ -4569,7 +4822,7 @@ class PepeloCoopGame {
     const ring2 = new THREE.Mesh(ringGeo, new THREE.MeshStandardMaterial({
       color: 0xff4d8d,
       emissive: 0xff2b76,
-      emissiveIntensity: 0.8
+      emissiveIntensity: 0.9
     }));
     ring2.rotation.x = Math.PI / 3;
     group.add(ring2);
@@ -4586,11 +4839,11 @@ class PepeloCoopGame {
   }
 
   addFloatingClouds() {
-    const cloudMat = new THREE.MeshBasicMaterial({ color: 0x473b7b, transparent: true, opacity: 0.35 });
-    for (let i = 0; i < 8; i++) {
-      const geo = new THREE.DodecahedronGeometry(2.5 + Math.random() * 2);
+    const cloudMat = new THREE.MeshBasicMaterial({ color: 0x3d306b, transparent: true, opacity: 0.35 });
+    for (let i = 0; i < 10; i++) {
+      const geo = new THREE.DodecahedronGeometry(2.5 + Math.random() * 2.5);
       const cloud = new THREE.Mesh(geo, cloudMat);
-      cloud.position.set((Math.random() - 0.5) * 45, -6 - Math.random() * 4, (Math.random() - 0.5) * 45);
+      cloud.position.set((Math.random() - 0.5) * 55, -8 - Math.random() * 5, (Math.random() - 0.5) * 55);
       this.scene.add(cloud);
       this.levelObjects.push(cloud);
     }
@@ -4702,7 +4955,7 @@ class PepeloCoopGame {
     for (const cube of this.interactiveCubes) {
       if (cube.isCarried) continue;
       const dist = pPos.distanceTo(cube.mesh.position);
-      if (dist < 2.5) {
+      if (dist < 2.6) {
         this.pickUpCube(cube);
         break;
       }
@@ -4741,6 +4994,30 @@ class PepeloCoopGame {
       y: cube.mesh.position.y,
       z: cube.mesh.position.z
     });
+  }
+
+  handleHazardHit(player) {
+    if (this.isRespawning) return;
+    this.isRespawning = true;
+
+    window.soundFx.playOops();
+    window.soundFx.vibrate([100, 50, 100]);
+
+    if (this.carriedObject) {
+      this.dropCarriedObject();
+    }
+
+    if (window.app && typeof window.app.showToast === 'function') {
+      window.app.showToast('âš¡ Zapped! Careful with laser timing!');
+    }
+
+    const cp = this.checkpointPos || { x: 0, y: 1.5, z: 8 };
+    player.mesh.position.set(cp.x, cp.y, cp.z);
+    player.velocity.set(0, 0, 0);
+
+    setTimeout(() => {
+      this.isRespawning = false;
+    }, 600);
   }
 
   // --- NETWORK SYNC ---
@@ -4797,10 +5074,11 @@ class PepeloCoopGame {
     requestAnimationFrame(() => this.animate());
 
     const delta = Math.min(this.clock.getDelta(), 0.1);
+    this.gameTime += delta;
 
+    this.updatePuzzles(delta);
     this.updateLocalPlayer(delta);
     this.updateRemotePlayer(delta);
-    this.updatePuzzles(delta);
     this.updateCamera();
     this.checkGoalPortal();
     this.broadcastLocalState();
@@ -4858,28 +5136,93 @@ class PepeloCoopGame {
     const px = p.mesh.position.x;
     const pz = p.mesh.position.z;
 
+    // Platform collisions & Standing on moving platforms
     for (const plat of this.platforms) {
+      if (plat.isCrumbling && (plat.crumbleState === 'falling' || plat.mesh.position.y < -5)) {
+        continue;
+      }
+
       const top = plat.mesh.position.y + plat.h / 2;
       const hw = plat.w / 2 + 0.4;
       const hd = plat.d / 2 + 0.4;
 
       if (px >= plat.mesh.position.x - hw && px <= plat.mesh.position.x + hw &&
           pz >= plat.mesh.position.z - hd && pz <= plat.mesh.position.z + hd) {
-        if (feetY <= top + 0.2 && feetY >= top - 0.8 && p.velocity.y <= 0) {
+        if (feetY <= top + 0.25 && feetY >= top - 0.8 && p.velocity.y <= 0) {
           p.mesh.position.y = top;
           p.velocity.y = 0;
           p.isGrounded = true;
+
+          // Carry player with moving platform!
+          if (plat.deltaX) p.mesh.position.x += plat.deltaX;
+          if (plat.deltaZ) p.mesh.position.z += plat.deltaZ;
+
+          // Crumbling tile triggered!
+          if (plat.isCrumbling && plat.crumbleState === 'idle') {
+            plat.crumbleState = 'shaking';
+            plat.shakeTime = 0;
+            window.soundFx.playHeartbeat();
+          }
           break;
         }
       }
     }
 
-    if (p.mesh.position.y < -12) {
-      p.mesh.position.set(0, 3, 6);
+    // Color barrier blocking
+    const myRole = window.network.player.role || 'female';
+    for (const barrier of this.colorBarriers) {
+      if (barrier.allowedRole !== myRole) {
+        const hw = barrier.w / 2 + 0.5;
+        const hd = barrier.d / 2 + 0.5;
+        const bx = barrier.mesh.position.x;
+        const bz = barrier.mesh.position.z;
+        if (Math.abs(p.mesh.position.x - bx) < hw && Math.abs(p.mesh.position.z - bz) < hd) {
+          const overlapX = hw - Math.abs(p.mesh.position.x - bx);
+          const overlapZ = hd - Math.abs(p.mesh.position.z - bz);
+          if (overlapX < overlapZ) {
+            p.mesh.position.x = (p.mesh.position.x > bx) ? bx + hw : bx - hw;
+          } else {
+            p.mesh.position.z = (p.mesh.position.z > bz) ? bz + hd : bz - hd;
+          }
+        }
+      }
+    }
+
+    // Hazard Laser Collision
+    if (!this.isRespawning) {
+      for (const hz of this.hazards) {
+        if (!hz.active || hz.mesh.position.y < -10) continue;
+        const hPos = hz.mesh.position;
+        let hit = false;
+        const pY = p.mesh.position.y + 0.9;
+        if (hz.orientAxis === 'x') {
+          const inX = Math.abs(p.mesh.position.x - hPos.x) <= hz.length / 2 + 0.35;
+          const inZ = Math.abs(p.mesh.position.z - hPos.z) <= 0.65;
+          const inY = Math.abs(pY - hPos.y) <= 0.85;
+          if (inX && inZ && inY) hit = true;
+        } else {
+          const inZ = Math.abs(p.mesh.position.z - hPos.z) <= hz.length / 2 + 0.35;
+          const inX = Math.abs(p.mesh.position.x - hPos.x) <= 0.65;
+          const inY = Math.abs(pY - hPos.y) <= 0.85;
+          if (inX && inZ && inY) hit = true;
+        }
+
+        if (hit) {
+          this.handleHazardHit(p);
+          break;
+        }
+      }
+    }
+
+    // Void fall respawn
+    if (p.mesh.position.y < -14) {
+      const cp = this.checkpointPos || { x: 0, y: 1.5, z: 8 };
+      p.mesh.position.set(cp.x, cp.y, cp.z);
       p.velocity.set(0, 0, 0);
       window.soundFx.playOops();
     }
 
+    // Cube holding position
     if (this.carriedObject) {
       this.carriedObject.mesh.position.set(
         p.mesh.position.x,
@@ -4915,8 +5258,83 @@ class PepeloCoopGame {
   }
 
   updatePuzzles(delta) {
+    // 1. Moving Platforms
+    for (const plat of this.movingPlatforms) {
+      const prevX = plat.mesh.position.x;
+      const prevZ = plat.mesh.position.z;
+      const prevY = plat.mesh.position.y;
+
+      const offset = Math.sin(this.gameTime * plat.speed + plat.timeOffset) * plat.range;
+      if (plat.axis === 'x') plat.mesh.position.x = plat.baseX + offset;
+      else if (plat.axis === 'z') plat.mesh.position.z = plat.baseZ + offset;
+      else if (plat.axis === 'y') plat.mesh.position.y = plat.baseY + offset;
+
+      plat.deltaX = plat.mesh.position.x - prevX;
+      plat.deltaY = plat.mesh.position.y - prevY;
+      plat.deltaZ = plat.mesh.position.z - prevZ;
+    }
+
+    // 2. Crumbling Platforms
+    for (const cp of this.crumblingPlatforms) {
+      if (cp.crumbleState === 'shaking') {
+        cp.shakeTime += delta;
+        cp.mesh.position.x = cp.baseX + (Math.random() - 0.5) * 0.16;
+        cp.mesh.position.z = cp.baseZ + (Math.random() - 0.5) * 0.16;
+        if (cp.shakeTime >= 0.8) {
+          cp.crumbleState = 'falling';
+          cp.fallTime = 0;
+          cp.mesh.position.x = cp.baseX;
+          cp.mesh.position.z = cp.baseZ;
+          cp.mesh.position.y = -35;
+          window.soundFx.playOops();
+        }
+      } else if (cp.crumbleState === 'falling') {
+        cp.fallTime += delta;
+        if (cp.fallTime >= 3.5) {
+          cp.crumbleState = 'idle';
+          cp.mesh.position.y = cp.baseY;
+          cp.mesh.position.x = cp.baseX;
+          cp.mesh.position.z = cp.baseZ;
+          window.soundFx.playPop();
+        }
+      }
+    }
+
+    // 3. Timed Pressure Plates
+    for (const tp of this.timedPlates) {
+      if (tp.timerActive) {
+        tp.timeLeft -= delta;
+        if (tp.timeLeft <= 0) {
+          tp.timerActive = false;
+          tp.timeLeft = 0;
+          tp.isPressed = false;
+          tp.btn.position.y = 0.1;
+          tp.btn.material.emissiveIntensity = 0.2;
+          window.soundFx.playOops();
+          if (tp.onExpire) tp.onExpire();
+        }
+      }
+    }
+
+    // 4. Hazard Lasers Patrol
+    for (const hz of this.hazards) {
+      if (hz.patrolRange > 0) {
+        const offset = Math.sin(this.gameTime * hz.patrolSpeed + hz.timeOffset) * hz.patrolRange;
+        if (hz.patrolAxis === 'x') {
+          hz.mesh.position.x = hz.baseX + offset;
+          if (hz.e1) hz.e1.position.x = hz.baseX + offset - (hz.orientAxis === 'x' ? hz.length / 2 : 0);
+          if (hz.e2) hz.e2.position.x = hz.baseX + offset + (hz.orientAxis === 'x' ? hz.length / 2 : 0);
+        } else if (hz.patrolAxis === 'z') {
+          hz.mesh.position.z = hz.baseZ + offset;
+          if (hz.e1) hz.e1.position.z = hz.baseZ + offset - (hz.orientAxis === 'z' ? hz.length / 2 : 0);
+          if (hz.e2) hz.e2.position.z = hz.baseZ + offset + (hz.orientAxis === 'z' ? hz.length / 2 : 0);
+        }
+      }
+    }
+
+    // 5. Normal Platforms & Doors Target Lerping
     for (const plat of this.platforms) {
-      if (plat.targetY !== undefined) {
+      if (plat.targetY !== undefined && !plat.isMoving && !plat.isCrumbling) {
         plat.mesh.position.y = THREE.MathUtils.lerp(plat.mesh.position.y, plat.targetY, delta * 4);
       }
     }
@@ -4927,6 +5345,7 @@ class PepeloCoopGame {
       }
     }
 
+    // 6. Normal Pressure Plate Trigger Checks
     for (const plate of this.pressurePlates) {
       let isPressed = false;
 
@@ -4965,6 +5384,7 @@ class PepeloCoopGame {
       }
     }
 
+    // 7. Portal Rotation
     if (this.portal) {
       this.portal.ring1.rotation.z += delta * 1.5;
       this.portal.ring2.rotation.y += delta * 1.2;
@@ -4976,8 +5396,8 @@ class PepeloCoopGame {
     const p = this.localPlayer.mesh.position;
 
     const targetCamX = p.x;
-    const targetCamY = p.y + 14;
-    const targetCamZ = p.z + 18;
+    const targetCamY = p.y + 15;
+    const targetCamZ = p.z + 20;
 
     this.camera.position.x = THREE.MathUtils.lerp(this.camera.position.x, targetCamX, 0.08);
     this.camera.position.y = THREE.MathUtils.lerp(this.camera.position.y, targetCamY, 0.08);
@@ -5016,7 +5436,6 @@ class PepeloCoopGame {
     }
 
     if (this.currentLevelIndex >= this.totalLevels) {
-      // Grand Finale Modal
       const finaleModal = document.getElementById('pepelo-finale-modal');
       if (finaleModal) finaleModal.style.display = 'flex';
     } else {
@@ -5032,8 +5451,9 @@ class PepeloCoopGame {
     const modal = document.getElementById('pepelo-win-modal');
     if (modal) modal.style.display = 'none';
 
-    this.currentLevelIndex++;
-    if (this.currentLevelIndex > this.totalLevels) {
+    if (this.currentLevelIndex < this.totalLevels) {
+      this.currentLevelIndex++;
+    } else {
       this.currentLevelIndex = 1;
     }
 
@@ -5071,10 +5491,10 @@ class PepeloCoopGame {
     grid.innerHTML = '';
     const levelNames = [
       "Twin Bridges", "The Elevator", "Stepping Stones", "Double Gate",
-      "Crystal Lift", "Heavy Lifting", "Color Resonance", "Laser Grid",
-      "Rotating Gears", "Seesaw Bridge", "Sync Sprint", "Conveyor Maze",
-      "Starry Crossway", "Sky Bouncers", "Cube Domino", "Mirror Chamber",
-      "Cloud Spire", "Laser Gauntlet", "Trial of Trust", "Eternal Sanctuary"
+      "Crystal Lift", "Moving Crossway", "Color Resonance", "Laser Grid",
+      "Crumbling Steps", "Seesaw Bridge", "Timed Sprint", "Conveyor Laser Maze",
+      "Dual Energy Relay", "Sky Bouncers", "Domino Cascade", "Mirror Chamber",
+      "Cloud Spire Tower", "Laser Gauntlet", "Trial of Trust", "Eternal Sanctuary"
     ];
 
     const highestUnlocked = (window.auth && typeof window.auth.getUnlockedLevel === 'function')
@@ -5091,9 +5511,9 @@ class PepeloCoopGame {
 
       let badge = `<span class="lvl-num">${i}</span>`;
       if (isCompleted) {
-        badge = `<span class="lvl-num completed">✓</span>`;
+        badge = `<span class="lvl-num completed">&#x2713;</span>`;
       } else if (!isUnlocked) {
-        badge = `<span class="lvl-num locked-icon">🔒</span>`;
+        badge = `<span class="lvl-num locked-icon">&#x1F512;</span>`;
       }
 
       btn.innerHTML = `${badge} <span class="lvl-name">${levelNames[i - 1]}</span>`;
@@ -5130,10 +5550,10 @@ class PepeloCoopGame {
 
     if (eyeIcon && eyeText) {
       if (this.isHintVisible) {
-        eyeIcon.textContent = '🙈';
+        eyeIcon.textContent = 'ðŸ™ˆ';
         eyeText.textContent = 'Hide Hint';
       } else {
-        eyeIcon.textContent = '👁️';
+        eyeIcon.textContent = 'ðŸ‘ï¸';
         eyeText.textContent = 'Show Hint';
       }
     }
@@ -5146,127 +5566,133 @@ class PepeloCoopGame {
     const eyeIcon = document.getElementById('pepelo-eye-icon');
     const eyeText = document.getElementById('pepelo-eye-text');
 
-    // Keep hint hidden by default on each stage load
     this.isHintVisible = false;
     if (body) body.classList.add('hidden');
-    if (eyeIcon) eyeIcon.textContent = '👁️';
+    if (eyeIcon) eyeIcon.textContent = 'ðŸ‘ï¸';
     if (eyeText) eyeText.textContent = 'Show Hint';
 
     const hints = [
       // 1
       `Stage 1: Twin Bridges`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Step on the <b>Pink Button</b> to lower Bridge 1.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Cross over and press <b>GRAB (E)</b> to lift the <b>Golden Energy Cube</b>.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>🤴 King:</b> Place cube on the <b>Green Button</b> to open the gate.</span></div>
-       <div class="hint-step"><span class="hint-num">4</span> <span><b>👫 Both:</b> Enter the <b>Golden Exit Portal</b>!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on the <b>Pink Button</b> to lower Bridge 1.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Cross over and press <b>GRAB (E)</b> to lift the <b>Golden Cube</b>.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Place cube on the <b>Green Button</b> to open the gate.</span></div>
+       <div class="hint-step"><span class="hint-num">4</span> <span><b>ðŸ‘« Both:</b> Enter the <b>Golden Exit Portal</b>!</span></div>`,
 
       // 2
       `Stage 2: The Elevator`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Step onto the wooden <b>Elevator Platform</b>.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Stand on the <b>Blue Button</b> downstairs to raise the lift!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👸 Queen:</b> Step on the <b>Pink Button</b> upstairs to drop the ramp for King.</span></div>
-       <div class="hint-step"><span class="hint-num">4</span> <span><b>👫 Both:</b> Meet at the high <b>Sanctuary Portal</b> together!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Stand on the wooden <b>Elevator Platform</b>.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Step on the <b>Blue Button</b> downstairs to hoist Queen up!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘¸ Queen:</b> Step on the <b>Pink Button</b> upstairs to drop the ramp for King.</span></div>
+       <div class="hint-step"><span class="hint-num">4</span> <span><b>ðŸ‘« Both:</b> Meet at the high <b>Sanctuary Portal</b> together!</span></div>`,
 
       // 3
       `Stage 3: Stepping Stones`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Hold the <b>Center Button</b> to freeze the stepping stones in place!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Hop across the stones and grab the Pink Energy Cube.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👫 Both:</b> Place cube on the far plate and step into the portal!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on Button 1 to freeze Stones 1 &amp; 2 in place.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Hop to Stone 2 and step on Button 2 to freeze Stones 3 &amp; 4.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Carry the Pink Cube across to unlock the exit portal!</span></div>`,
 
       // 4
       `Stage 4: Double Gate`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Step on Button 1 on your side to open King's door.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Walk through and step on Button 2 to open Queen's door.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👫 Both:</b> Leapfrog forward and unite at the Exit Portal!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on Button 1 on your corridor to open King's door.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Walk through and step on Button 2 to open Queen's door.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Leapfrog forward and unite at the Exit Portal!</span></div>`,
 
       // 5
       `Stage 5: Crystal Lift`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Step on the cyan button to raise King on Lift B.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Reach the cliff and step on the gold button to raise Queen on Lift A!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👫 Both:</b> Celebrate at the high crystal sanctuary!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Step on the cyan button to raise King on Lift B.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Reach the cliff and step on the gold button to raise Queen on Lift A!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Celebrate at the high crystal sanctuary!</span></div>`,
 
       // 6
-      `Stage 6: Heavy Lifting`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen & 🤴 King:</b> Both grab one energy cube each.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>👫 Both:</b> Place both cubes simultaneously on the twin scale buttons!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>🌉 Bridge:</b> The heavy drawbridge will drop across the chasm!</span></div>`,
+      `Stage 6: Moving Crossway`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš ï¸ Hazard:</b> Watch the golden ferry platform oscillating over the deep abyss!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Pick up the Pink Energy Cube. Time your jump onto the moving ferry.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Leap across with Queen and place the cube on the green gate switch!</span></div>`,
 
       // 7
       `Stage 7: Color Resonance`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Walk the Pink Path and activate the Pink Resonator.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Walk the Blue Path and activate the Blue Resonator.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👫 Both:</b> When both paths glow, the central gates dissolve!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Walk through the <b>Pink Forcefield</b> (only Queen can enter).</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Walk through the <b>Blue Forcefield</b> (only King can enter).</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Step on the mutual plates inside to drop each other's drawbridges!</span></div>`,
 
       // 8
       `Stage 8: Laser Grid`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Stand on the Green Shield Button to disable the red laser beam!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Sprint through while the laser is safely turned off!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>🤴 King:</b> Hit the back switch so Queen can join you!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš¡ DANGER:</b> The red laser sweeps along the catwalk! Don't touch it!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Step on the <b>Green Timed Plate</b> to cut power to the laser for 4 seconds!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> SPRINT across with the cube before the laser turns back on!</span></div>`,
 
       // 9
-      `Stage 9: Rotating Gears`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👫 Timing:</b> Watch the rotating gears in the sky.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>👸 Queen:</b> Step on the brake button to lock the first gear in place.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>🤴 King:</b> Cross over to the second gear and unlock the exit!</span></div>`,
+      `Stage 9: Crumbling Steps`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš ï¸ WARNING:</b> Stepping stones shake and drop into the void after 0.8s!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘« Keep Moving:</b> Leap from stone to stone with zero hesitation!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>âœ¨ Anchor:</b> Reach the far side and step on the gold plate to lock a solid bridge!</span></div>`,
 
       // 10
       `Stage 10: Seesaw Bridge`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>⚖️ Balance:</b> Queen stand on the left end, King stand on the right end.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>👫 Harmony:</b> Equalize your weights to make the seesaw a horizontal bridge!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👫 Both:</b> Walk into the portal together!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš–ï¸ Tilting Bridge:</b> The long seesaw pivots over the abyss!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Carry the heavy cube to the back switch to elevate the bridge's tip.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Run up the elevated incline and jump to the high exit ledge!</span></div>`,
 
       // 11
-      `Stage 11: Sync Sprint`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>⏱️ Speed:</b> Both players stand ready near your distant buttons.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>👫 Countdown:</b> 3-2-1 GO! Step on both buttons within 5 seconds!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>✨ Reward:</b> The golden skyway bridge will rise!</span></div>`,
+      `Stage 11: Timed Sprint`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>â±ï¸ TICK-TOCK:</b> The pink plate starts a strict 6-second countdown timer!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Sprint across the golden bridge before the 6 seconds run out!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Step on the blue latch plate to permanently lock the bridge open!</span></div>`,
 
       // 12
-      `Stage 12: Conveyor Maze`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Toggle the conveyor direction plate to help King ride forward.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Reach the opposite shore and open the safe bypass for Queen!</span></div>`,
+      `Stage 12: Conveyor Laser Maze`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸŒŠ Double Motion:</b> Two moving platforms traveling in opposite directions!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Hold the override button to shut down the center sweeping laser.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Transfer across the moving platforms to reach the exit portal!</span></div>`,
 
       // 13
-      `Stage 13: Starry Crossway`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Step on the Pink Button to raise Bridge A for King.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Step on the Blue Button to raise Bridge B for Queen.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👫 Meet:</b> Meet in the center starry sanctuary!</span></div>`,
+      `Stage 13: Dual Energy Relay`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘¸ Queen:</b> Ride the left aerial gondola to retrieve the Pink Energy Cube.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Ride the right aerial gondola to retrieve the Blue Energy Cube.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Place both cubes in the twin matrix sockets to power the summit bridge!</span></div>`,
 
       // 14
-      `Stage 14: Sky Bouncers`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>🦘 High Jump:</b> Ride the elevated launch lift together.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>👸 Queen:</b> Hold the upper switch to lock the lift on high cliff!</span></div>`,
+      `Stage 14: Skyward Bouncers`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ”ï¸ High Ascent:</b> A 3-tier vertical cliff climb!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen:</b> Ride Lift 1 to Tier 2, then step on crumbling tiles to reach Lift 2 switch.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ¤´ King:</b> Ascend to Tier 3 on Lift 2 and summon Queen to the top!</span></div>`,
 
       // 15
-      `Stage 15: Cube Domino`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👸 Queen:</b> Carry the Pink Cube to Socket 1.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Carry the Blue Cube to Socket 2.</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>🌉 Bridge:</b> Both sockets active triggers the golden Domino bridge!</span></div>`,
+      `Stage 15: Domino Cascade`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ§© 3-Stage Chain:</b> Use Cube 1 on Ground to raise the lift to Tier 2.</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤´ King:</b> Ride up and bring down Cube 2 from Tier 2.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Both:</b> Place Cube 2 on Plate 2 to extend the final skyway bridge!</span></div>`,
 
       // 16
       `Stage 16: Mirror Chamber`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>🪞 Mirroring:</b> Move in mirror harmony across the twin glass islands.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>👫 Sync:</b> Step on the twin green mirror plates at the same time!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸªž Mirrored Gauntlet:</b> Separate identical corridors with sweeping lasers!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘« In Sync:</b> Dodge lasers and jump across oscillating platforms in parallel!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>âš¡ Climax:</b> Step on both green mirror plates at the exact same moment!</span></div>`,
 
       // 17
-      `Stage 17: Cloud Spire`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>🗼 Ascent:</b> King rides Lift 1 to mid-tower; Queen steps on blue plate.</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>👸 Queen:</b> King sends down Lift 2 from mid-tower. Both ascend to the spire summit!</span></div>`,
+      `Stage 17: Cloud Spire Tower`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ—¼ Mega Tower:</b> 4 vertical tiers reaching up into the cosmos!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ‘¸ Queen & ðŸ¤´ King:</b> Alternate elevators, dodge the sweeping laser on Tier 1.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Summit:</b> Leap across crumbling stones to reach the Tier 3 summit lift!</span></div>`,
 
       // 18
       `Stage 18: Laser Gauntlet`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>⚡ Coordination:</b> Alternate stepping on buttons 1 and 2 to pass through the dual barrier.</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>âš¡ Aerial Tightrope:</b> Narrow catwalks with 3 lasers at different speeds!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>â±ï¸ Shield Plates:</b> Use the 5-second shield plates to time safe crossings.</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Cross:</b> Communicate verbally and walk across one laser at a time!</span></div>`,
 
       // 19
       `Stage 19: Trial of Trust`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>🤝 Faith:</b> The glass bridge looks invisible, but it solidifies while Queen stands on the Trust Altar!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>🤴 King:</b> Cross the bridge safely and unlock the door from the other side!</span></div>`,
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ¤ Faith in Partner:</b> Juliet's path is invisible unless Romeo stands on the Blue Altar!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ¤ Reverse Trust:</b> Romeo's path is impassable unless Juliet stands on the Pink Altar!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Manifest:</b> Each partner literally holds up the ground under the other's feet!</span></div>`,
 
       // 20
       `Stage 20: Eternal Sanctuary (GRAND FINALE)`,
-      `<div class="hint-step"><span class="hint-num">1</span> <span><b>👑 Grand Finale:</b> Both players grab their Royal Cubes!</span></div>
-       <div class="hint-step"><span class="hint-num">2</span> <span><b>💖 Heart Altar:</b> Place both cubes on the dual golden altars!</span></div>
-       <div class="hint-step"><span class="hint-num">3</span> <span><b>👫 Eternity:</b> Run hand-in-hand into the Giant Crowned Heart Vortex to claim victory over all 20 stages!</span></div>`
+      `<div class="hint-step"><span class="hint-num">1</span> <span><b>ðŸ‘‘ Phase 1:</b> Traverse the dual orbital moving platforms while dodging cosmic lasers!</span></div>
+       <div class="hint-step"><span class="hint-num">2</span> <span><b>ðŸ’– Phase 2:</b> Grab the Sacred Soul Cubes and ride the twin spiral elevators to Tier 3!</span></div>
+       <div class="hint-step"><span class="hint-num">3</span> <span><b>ðŸ‘« Phase 3:</b> Place both cubes into the Twin Heart Altars and step into the Giant Crowned Heart Vortex to conquer all 20 stages!</span></div>`
     ];
 
     const idx = (level - 1) * 2;
@@ -5292,7 +5718,6 @@ class PepeloCoopGame {
 }
 
 window.pepeloGame = new PepeloCoopGame();
-
 
 // --- js\games\sync.js ---
 // Mini-Game 1: "Telepathy: Think as One" (Couple Mind-Match)
